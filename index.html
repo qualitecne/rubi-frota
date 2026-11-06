@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RUBI FROTA - Gestão Inteligente</title>
+    <!-- Bibliotecas -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e293b">
+    
+    <style>
+        details > summary { list-style: none; cursor: pointer; }
+        details > summary::-webkit-details-marker { display: none; }
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-slate-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // URL DA SUA API GOOGLE SHEETS
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7N4C1lZperjJZiDlk_SPDEl4OlfvuvbjdePeWKa-qr2ojbu4kmL862ntMjjcZNPrPQQ/exec';
+
+        function ControleFrotaMulti() {
+            const [veiculos, setVeiculos] = useState([]);
+            const [veiculoAtivo, setVeiculoAtivo] = useState('TODOS'); 
+            const [despesas, setDespesas] = useState([]);
+            const [lembretes, setLembretes] = useState([]);
+            
+            const [view, setView] = useState('dashboard');
+            const [showCadastro, setShowCadastro] = useState(false);
+            const [isGenerating, setIsGenerating] = useState(false);
+            const [formError, setFormError] = useState('');
+            const [syncStatus, setSyncStatus] = useState('☁️ A conectar...');
+
+            // Estado de Edição
+            const [editingDespesaIndex, setEditingDespesaIndex] = useState(null);
+
+            const [novoVeiculo, setNovoVeiculo] = useState({ 
+                veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' 
+            });
+
+            const defaultDespesa = {
+                categoria: 'Mecânica / Manutenção', data: new Date().toISOString().split('T')[0], 
+                valor: '', valorMaoObra: '', valorPecas: '', situacao: 'Concluída',
+                km: '', fornecedor: '', nf: '', descricao: '', pecas: '',
+                tipoOS: 'Corretiva', localOS: 'Externa', kmPercorrido: '', consumoKmLitro: '', precoCombustivel: '', anexos: []
+            };
+
+            const [novaDespesa, setNovaDespesa] = useState(defaultDespesa);
+
+            const [novoLembrete, setNovoLembrete] = useState({
+                tipo: 'Troca de Óleo e Filtro', freqKm: '', freqMeses: '', ultimoKm: '', ultimaData: new Date().toISOString().split('T')[0]
+            });
+
+            // CARREGAMENTO INICIAL
+            useEffect(() => {
+                carregarDaNuvem();
+            }, []);
+
+            // FUNÇÕES DE SINCRONIZAÇÃO EM NUVEM
+            const carregarDaNuvem = async () => {
+                setSyncStatus('⏳ A puxar dados...');
+                try {
+                    const response = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: 'carregar' })
+                    });
+                    const result = await response.json();
+                    
+                    if (result.status === 'sucesso') {
+                        if (result.dados.veiculos) setVeiculos(result.dados.veiculos);
+                        if (result.dados.despesas) setDespesas(result.dados.despesas);
+                        if (result.dados.lembretes) setLembretes(result.dados.lembretes);
+                        setSyncStatus('☁️ OK');
+                        localStorage.setItem('rubi_frota_db', JSON.stringify(result.dados));
+                    }
+                } catch (error) {
+                    console.error("Erro na nuvem, a usar dados locais", error);
+                    setSyncStatus('⚠️ Offline');
+                    const saved = localStorage.getItem('rubi_frota_db');
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        if (parsed.veiculos) setVeiculos(parsed.veiculos);
+                        if (parsed.despesas) setDespesas(parsed.despesas);
+                        if (parsed.lembretes) setLembretes(parsed.lembretes);
+                    }
+                }
+            };
+
+            const salvarNaNuvem = async (veics, desps, lembs) => {
+                setSyncStatus('⏳ A guardar...');
+                localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: veics, despesas: desps, lembretes: lembs }));
+                try {
+                    const response = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: 'sincronizar', veiculos: veics, despesas: desps, lembretes: lembs })
+                    });
+                    const result = await response.json();
+                    if (result.status === 'sucesso') {
+                        setSyncStatus('☁️ OK');
+                    } else {
+                        setSyncStatus('⚠️ Erro Sync');
+                    }
+                } catch (error) {
+                    setSyncStatus('⚠️ Offline');
+                }
+            };
+
+            // LÓGICA DE DADOS
+            const isGlobal = veiculoAtivo === 'TODOS';
+            const veiculoAtual = isGlobal ? null : veiculos.find(v => v.placa === veiculoAtivo);
+            
+            const despesasFiltradas = isGlobal ? despesas.slice().reverse() : despesas.filter(d => d.placa === veiculoAtivo).reverse();
+            const lembretesFiltrados = isGlobal ? lembretes : lembretes.filter(l => l.placa === veiculoAtivo);
+            const totalGasto = despesasFiltradas.reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0);
+            
+            const getKmAtual = (placa) => {
+                const v = veiculos.find(ve => ve.placa === placa);
+                return v ? parseFloat(v.kmAtual) || 0 : 0;
+            };
+
+            const kmAtualNum = veiculoAtual ? parseFloat(veiculoAtual.kmAtual) || 0 : 0;
+
+            const handleAddVeiculo = () => {
+                if (!novoVeiculo.veiculo || !novoVeiculo.placa) return alert('Veículo e Matrícula/Placa são obrigatórios!');
+                const placaUpper = novoVeiculo.placa.toUpperCase();
+                if (veiculos.find(v => v.placa === placaUpper)) return alert('Matrícula já registada!');
+                
+                const novosVeiculos = [...veiculos, { ...novoVeiculo, placa: placaUpper }];
+                setVeiculos(novosVeiculos);
+                salvarNaNuvem(novosVeiculos, despesas, lembretes);
+                
+                setVeiculoAtivo(placaUpper);
+                setNovoVeiculo({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
+                setShowCadastro(false);
+                setView('dashboard');
+            };
+
+            const atualizarKmVeiculo = (novoKmInformado, placaVeiculo) => {
+                const novoKm = parseFloat(novoKmInformado);
+                const veiculoAlvo = veiculos.find(v => v.placa === placaVeiculo);
+                if (veiculoAlvo && novoKm > (parseFloat(veiculoAlvo.kmAtual) || 0)) {
+                    return veiculos.map(v => v.placa === placaVeiculo ? { ...v, kmAtual: novoKm } : v);
+                }
+                return veiculos;
+            };
+
+            const handleAddDespesa = () => {
+                if (isGlobal) return alert('Selecione um veículo específico no topo para efetuar um registo.');
+                
+                let valorFinal = novaDespesa.valor;
+                
+                if (view === 'os') {
+                    const totalOS = (parseFloat(novaDespesa.valorMaoObra) || 0) + (parseFloat(novaDespesa.valorPecas) || 0);
+                    if (totalOS <= 0 && novaDespesa.situacao === 'Concluída') {
+                        setFormError('Informe o valor da Mão de Obra ou das Peças para uma O.S. Concluída.');
+                        return;
+                    }
+                    valorFinal = totalOS > 0 ? totalOS.toFixed(2) : '0.00';
+                }
+
+                if (!novaDespesa.data || (!valorFinal && view !== 'os')) {
+                    setFormError('Data e Valor são obrigatórios.');
+                    return;
+                }
+                setFormError('');
+
+                let novosVeiculos = veiculos;
+                if (novaDespesa.km) {
+                    novosVeiculos = atualizarKmVeiculo(novaDespesa.km, veiculoAtivo);
+                    setVeiculos(novosVeiculos);
+                }
+
+                let novasDespesas = [...despesas];
+                
+                if (editingDespesaIndex !== null) {
+                    // Atualiza registo existente
+                    novasDespesas[editingDespesaIndex] = { ...novaDespesa, valor: valorFinal, placa: veiculoAtivo };
+                    alert('Registo atualizado com sucesso!');
+                } else {
+                    // Adiciona novo registo
+                    novasDespesas = [...despesas, { ...novaDespesa, valor: valorFinal, placa: veiculoAtivo }];
+                    alert('Registo guardado com sucesso!');
+                }
+
+                setDespesas(novasDespesas);
+                salvarNaNuvem(novosVeiculos, novasDespesas, lembretes);
+                
+                setEditingDespesaIndex(null);
+                setNovaDespesa(defaultDespesa);
+                setView('historico');
+            };
+
+            const handleEditDespesa = (despesa) => {
+                // Encontra o índice real no array original
+                const indexReal = despesas.indexOf(despesa);
+                setEditingDespesaIndex(indexReal);
+                setNovaDespesa(despesa);
+                if (despesa.categoria === 'Abastecimento') {
+                    setView('abastecimento');
+                } else {
+                    setView('os');
+                }
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            const cancelarEdicao = () => {
+                setEditingDespesaIndex(null);
+                setNovaDespesa(defaultDespesa);
+                setView('historico');
+            };
+
+            const handleAddLembrete = () => {
+                if (isGlobal) return alert('Selecione um veículo específico no topo para criar um lembrete.');
+                if (!novoLembrete.freqKm && !novoLembrete.freqMeses) return alert('Indique pelo menos a frequência em KM ou em Meses.');
+                
+                const novosLembretes = [...lembretes, { ...novoLembrete, id: Date.now(), placa: veiculoAtivo }];
+                setLembretes(novosLembretes);
+                salvarNaNuvem(veiculos, despesas, novosLembretes);
+                
+                setNovoLembrete({
+                    tipo: 'Troca de Óleo e Filtro', freqKm: '', freqMeses: '', ultimoKm: kmAtualNum || '', ultimaData: new Date().toISOString().split('T')[0]
+                });
+            };
+
+            const removerDespesa = (despesa) => {
+                if(confirm("Tem a certeza que deseja eliminar este registo?")) {
+                    const novasDespesas = despesas.filter(d => d !== despesa);
+                    setDespesas(novasDespesas);
+                    salvarNaNuvem(veiculos, novasDespesas, lembretes);
+                }
+            };
+
+            const removerLembrete = (id) => {
+                if(confirm("Eliminar este lembrete?")) {
+                    const novosLembretes = lembretes.filter(l => l.id !== id);
+                    setLembretes(novosLembretes);
+                    salvarNaNuvem(veiculos, despesas, novosLembretes);
+                }
+            };
+
+            const checkStatusLembrete = (lembrete) => {
+                const kmDoVeiculoAlvo = getKmAtual(lembrete.placa);
+                let status = { cor: 'bg-green-50 border-green-500 text-green-700', icone: '✅', msg: 'No Prazo', critico: false };
+                
+                if (lembrete.freqKm) {
+                    const limiteKm = parseFloat(lembrete.ultimoKm) + parseFloat(lembrete.freqKm);
+                    if (kmDoVeiculoAlvo >= limiteKm) {
+                        return { cor: 'bg-red-50 border-red-500 text-red-700', icone: '🚨', msg: 'Vencido (KM)', critico: true };
+                    } else if (limiteKm - kmDoVeiculoAlvo <= 1000) {
+                        status = { cor: 'bg-amber-50 border-amber-500 text-amber-700', icone: '⚠️', msg: 'Atenção: KM Próxima', critico: false };
+                    }
+                }
+
+                if (lembrete.freqMeses && !status.critico) {
+                    const dataLimite = new Date(lembrete.ultimaData);
+                    dataLimite.setMonth(dataLimite.getMonth() + parseInt(lembrete.freqMeses));
+                    const hoje = new Date();
+                    
+                    if (hoje >= dataLimite) {
+                        return { cor: 'bg-red-50 border-red-500 text-red-700', icone: '🚨', msg: 'Vencido (Prazo)', critico: true };
+                    } else {
+                        const diffDias = (dataLimite - hoje) / (1000 * 60 * 60 * 24);
+                        if (diffDias <= 15) {
+                            status = { cor: 'bg-amber-50 border-amber-500 text-amber-700', icone: '📅', msg: 'Atenção: Prazo Próximo', critico: false };
+                        }
+                    }
+                }
+                return status;
+            };
+
+            const checkSaudeVeiculo = (placa) => {
+                const lembretesDoVeiculo = lembretes.filter(l => l.placa === placa);
+                if (lembretesDoVeiculo.length === 0) return 'OK';
+                
+                let temCritico = false;
+                let temAviso = false;
+                
+                lembretesDoVeiculo.forEach(l => {
+                    const status = checkStatusLembrete(l);
+                    if (status.critico) temCritico = true;
+                    if (status.icone === '⚠️' || status.icone === '📅') temAviso = true;
+                });
+                
+                if (temCritico) return 'CRITICO';
+                if (temAviso) return 'AVISO';
+                return 'OK';
+            };
+
+            const formatCurrency = (val) => isNaN(parseFloat(val)) ? 'R$ 0,00' : parseFloat(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+            const getCorSituacao = (sit) => {
+                if (sit === 'Orçamento') return 'bg-amber-100 text-amber-800';
+                if (sit === 'Em Andamento') return 'bg-blue-100 text-blue-800';
+                return 'bg-green-100 text-green-800'; 
+            };
+
+            const getIconeSituacao = (sit) => {
+                if (sit === 'Orçamento') return '📝';
+                if (sit === 'Em Andamento') return '⏳';
+                return '✅'; 
+            };
+
+            const handleImageUpload = (e) => {
+                const arquivos = Array.from(e.target.files);
+                arquivos.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = event => {
+                        const img = new Image();
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            const ctx = canvas.getContext('2d');
+                            let w = img.width, h = img.height;
+                            if (w > 1200) { h *= 1200 / w; w = 1200; }
+                            canvas.width = w; canvas.height = h;
+                            ctx.drawImage(img, 0, 0, w, h);
+                            setNovaDespesa(prev => ({ ...prev, anexos: [...(prev.anexos || []), canvas.toDataURL('image/jpeg', 0.7)] }));
+                        };
+                        img.src = event.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                });
+            };
+
+            const generatePDF = () => {
+                setIsGenerating(true);
+                const mainUi = document.getElementById('main-ui');
+                const pdfContent = document.getElementById('pdf-content');
+                mainUi.style.display = 'none';
+                pdfContent.style.display = 'block';
+                window.scrollTo(0, 0);
+                
+                const filename = isGlobal ? `Relatorio_RUBI_FROTA_Global.pdf` : `Dossie_${veiculoAtual.placa}.pdf`;
+                
+                const opt = {
+                    margin: [5, 5, 10, 5],
+                    filename: filename,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                };
+                
+                window.html2pdf().set(opt).from(pdfContent).save().then(() => {
+                    mainUi.style.display = 'block';
+                    pdfContent.style.display = 'none';
+                    setIsGenerating(false);
+                }).catch(() => setIsGenerating(false));
+            };
+
+            return (
+                <div className="min-h-screen font-sans text-slate-800 pb-24 md:pb-10 max-w-md md:max-w-4xl mx-auto md:mt-4 shadow-xl bg-white md:rounded-3xl overflow-hidden relative border border-slate-200">
+                    
+                    <div id="main-ui">
+                        {/* CABEÇALHO GLOBAL */}
+                        <div className="bg-slate-900 text-white p-5 rounded-b-3xl md:rounded-t-3xl md:rounded-b-none shadow-md">
+                            <div className="flex justify-between items-center mb-4">
+                                <div className="flex items-center gap-3">
+                                    <h1 className="text-2xl font-black tracking-tight text-blue-400">RUBI<span className="text-white font-light">FROTA</span></h1>
+                                    <button onClick={carregarDaNuvem} className="bg-slate-800 border border-slate-700 text-[10px] font-bold px-2 py-1 rounded-lg text-slate-300 hover:bg-slate-700 transition" title="Sincronizar Nuvem">
+                                        {syncStatus}
+                                    </button>
+                                </div>
+                                <button onClick={() => setShowCadastro(!showCadastro)} className="bg-slate-800 hover:bg-slate-700 text-xs px-3 py-2 rounded-full font-bold border border-slate-700 transition">
+                                    {showCadastro ? 'Cancelar' : '+ Veículo'}
+                                </button>
+                            </div>
+                            
+                            {!showCadastro && veiculos.length > 0 && (
+                                <div className="bg-slate-800 rounded-2xl p-2 flex items-center border border-slate-700 focus-within:ring-2 focus-within:ring-blue-500">
+                                    <span className="pl-3 text-slate-400 text-xl">{isGlobal ? '🌐' : '🚘'}</span>
+                                    <select className="w-full p-2 bg-transparent text-white font-bold outline-none appearance-none" 
+                                            value={veiculoAtivo} onChange={e => { setVeiculoAtivo(e.target.value); setView('dashboard'); setEditingDespesaIndex(null); }}>
+                                        <option value="TODOS" className="text-slate-900 font-bold bg-slate-100">🌐 VISÃO GLOBAL (Toda a Frota)</option>
+                                        {veiculos.map((v, i) => <option key={i} value={v.placa} className="text-slate-900">{v.placa} - {v.veiculo}</option>)}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* CADASTRO DE VEÍCULO */}
+                        {showCadastro && (
+                            <div className="p-5 animate-fade-in space-y-4">
+                                <h2 className="font-bold text-lg text-slate-800">Registar Novo Veículo</h2>
+                                <input className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-400" placeholder="Marca / Modelo" value={novoVeiculo.veiculo} onChange={e => setNovoVeiculo({...novoVeiculo, veiculo: e.target.value})} />
+                                <input className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 uppercase" placeholder="Matrícula / Placa" value={novoVeiculo.placa} onChange={e => setNovoVeiculo({...novoVeiculo, placa: e.target.value})} />
+                                <input type="number" className="w-full border p-3 rounded-xl outline-none" placeholder="KM Inicial (Odómetro)" value={novoVeiculo.kmAtual} onChange={e => setNovoVeiculo({...novoVeiculo, kmAtual: e.target.value})} />
+                                <input className="w-full border p-3 rounded-xl outline-none" placeholder="Motorista Principal" value={novoVeiculo.motorista} onChange={e => setNovoVeiculo({...novoVeiculo, motorista: e.target.value})} />
+                                <button onClick={handleAddVeiculo} className="w-full bg-blue-700 text-white font-bold p-4 rounded-xl shadow-lg hover:bg-blue-800 transition">Guardar Veículo</button>
+                            </div>
+                        )}
+
+                        {/* MENSAGEM DE BLOQUEIO NA VISÃO GLOBAL */}
+                        {!showCadastro && isGlobal && (view === 'abastecimento' || view === 'os' || view === 'lembretes') && veiculos.length > 0 && (
+                            <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
+                                <span className="text-5xl block mb-4 opacity-50">🔒</span>
+                                <h2 className="font-bold text-xl text-slate-700 mb-2">Ação Não Permitida</h2>
+                                <p className="text-sm">Para registar abastecimentos, ordens de serviço ou criar alertas, selecione um veículo específico no menu superior.</p>
+                                <button onClick={() => setView('dashboard')} className="mt-6 text-blue-600 font-bold border border-blue-600 px-4 py-2 rounded-lg">Voltar ao Painel</button>
+                            </div>
+                        )}
+
+                        {/* CONTEÚDO PRINCIPAL DAS VIEWS */}
+                        {!showCadastro && veiculos.length > 0 && ((!isGlobal) || (isGlobal && (view === 'dashboard' || view === 'historico'))) && (
+                            <div className="p-4 space-y-4 mb-16">
+                                
+                                {/* VIEW: DASHBOARD */}
+                                {view === 'dashboard' && (
+                                    <div className="animate-fade-in space-y-4">
+                                        <div className="bg-slate-800 text-white p-4 rounded-2xl shadow-sm flex flex-col gap-3">
+                                            <div className="flex justify-between items-center border-b border-slate-700 pb-3">
+                                                <div>
+                                                    <h2 className="font-bold text-lg">{isGlobal ? 'Visão Global da Empresa' : veiculoAtual.veiculo}</h2>
+                                                    <p className="text-xs text-slate-400">{isGlobal ? `${veiculos.length} veículos ativos` : `Placa: ${veiculoAtual.placa}`}</p>
+                                                </div>
+                                                <span className="text-3xl">{isGlobal ? '🏢' : '🚘'}</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Custo Total</p>
+                                                    <p className="text-xl font-black text-blue-400">{formatCurrency(totalGasto)}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">{isGlobal ? 'Intervenções' : 'KM Atual'}</p>
+                                                    <p className="text-xl font-black text-white">{isGlobal ? `${despesasFiltradas.length} Registros` : kmAtualNum.toLocaleString()}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {isGlobal && (
+                                            <div className="mt-6">
+                                                <h3 className="font-bold text-slate-700 text-sm mb-3">Painel da Frota</h3>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    {veiculos.map(v => {
+                                                        const despVeiculo = despesas.filter(d => d.placa === v.placa);
+                                                        const totalVeiculo = despVeiculo.reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0);
+                                                        const kmV = parseFloat(v.kmAtual) || 0;
+                                                        const custoPorKm = kmV > 0 ? (totalVeiculo / kmV).toFixed(2) : 0;
+                                                        const saude = checkSaudeVeiculo(v.placa);
+                                                        let indicadorCor = 'bg-green-500';
+                                                        if (saude === 'CRITICO') indicadorCor = 'bg-red-500 animate-pulse';
+                                                        if (saude === 'AVISO') indicadorCor = 'bg-amber-500';
+
+                                                        return (
+                                                            <div key={v.placa} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-blue-400 transition relative" 
+                                                                 onClick={() => { setVeiculoAtivo(v.placa); setView('dashboard'); }}>
+                                                                <div className={`absolute top-3 right-3 w-3 h-3 rounded-full ${indicadorCor} shadow-sm border border-white`} title={`Status Manutenção: ${saude}`}></div>
+                                                                
+                                                                <div className="flex items-center gap-3 mb-3 border-b border-slate-100 pb-2">
+                                                                    <div className="bg-slate-100 w-10 h-10 rounded-full flex items-center justify-center text-xl">🚘</div>
+                                                                    <div>
+                                                                        <h4 className="font-black text-slate-800 text-sm uppercase leading-tight">{v.placa}</h4>
+                                                                        <p className="text-[10px] text-slate-500 font-bold uppercase truncate max-w-[150px]">{v.veiculo}</p>
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                                                    <div className="bg-slate-50 p-2 rounded-lg">
+                                                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Custo / KM</p>
+                                                                        <p className="font-black text-slate-700">R$ {custoPorKm}</p>
+                                                                    </div>
+                                                                    <div className="bg-slate-50 p-2 rounded-lg">
+                                                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Gasto Total</p>
+                                                                        <p className="font-black text-blue-700">{formatCurrency(totalVeiculo)}</p>
+                                                                    </div>
+                                                                    <div className="col-span-2 text-[10px] text-slate-500 font-bold flex justify-between mt-1">
+                                                                        <span>KM Atual: {kmV.toLocaleString()}</span>
+                                                                        <span>{despVeiculo.length} Regs.</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {!isGlobal && (
+                                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                                                <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center">
+                                                    <h3 className="font-bold text-slate-700 text-sm">Painel de Manutenção</h3>
+                                                </div>
+                                                <div className="p-3 space-y-2">
+                                                    {lembretesFiltrados.length === 0 ? (
+                                                        <p className="text-xs text-slate-400 text-center py-2">Nenhum lembrete configurado. Vá ao separador "Alertas".</p>
+                                                    ) : (
+                                                        lembretesFiltrados.map((l, i) => {
+                                                            const status = checkStatusLembrete(l);
+                                                            return (
+                                                                <div key={i} className={`flex items-center justify-between p-2 rounded-xl border-l-4 shadow-sm ${status.cor}`}>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-lg">{status.icone}</span>
+                                                                        <div>
+                                                                            <p className="text-sm font-bold leading-tight flex items-center gap-2">{l.tipo}</p>
+                                                                            <p className="text-[9px] font-bold uppercase opacity-80">{status.msg}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-right text-[10px] opacity-80 leading-tight">
+                                                                        {l.freqKm && <p>Troca: {(parseFloat(l.ultimoKm) + parseFloat(l.freqKm)).toLocaleString()} km</p>}
+                                                                        {l.freqMeses && <p>Validade: {(() => { let d = new Date(l.ultimaData); d.setMonth(d.getMonth() + parseInt(l.freqMeses)); return d.toLocaleDateString('pt-BR'); })()}</p>}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* VIEW: LEMBRETES CONFIGURAÇÃO */}
+                                {view === 'lembretes' && !isGlobal && (
+                                    <div className="animate-fade-in space-y-4">
+                                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">🔔 Configurar Alertas</h2>
+                                        
+                                        <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 space-y-3">
+                                            <h3 className="font-bold text-blue-800 text-sm">Nova Regra de Aviso</h3>
+                                            
+                                            <input className="w-full border p-2 rounded-xl text-sm" placeholder="Componente (Ex: Bateria, Óleo)" value={novoLembrete.tipo} onChange={e => setNovoLembrete({...novoLembrete, tipo: e.target.value})} list="opcoes-manutencao" />
+                                            <datalist id="opcoes-manutencao">
+                                                <option value="Troca de Óleo e Filtro" />
+                                                <option value="Substituição da Bateria" />
+                                                <option value="Rotação de Pneus" />
+                                                <option value="Revisão Preventiva (Marca)" />
+                                                <option value="Renovação do Seguro" />
+                                            </datalist>
+
+                                            <div className="grid grid-cols-2 gap-2 border-t border-blue-200 pt-2">
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-blue-700 uppercase">Frequência por KM</label>
+                                                    <input type="number" className="w-full border p-2 rounded-lg text-sm" placeholder="Ex: 10000" value={novoLembrete.freqKm} onChange={e => setNovoLembrete({...novoLembrete, freqKm: e.target.value})} />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-blue-700 uppercase">Frequência de Tempo</label>
+                                                    <select className="w-full border p-2 rounded-lg text-sm bg-white" value={novoLembrete.freqMeses} onChange={e => setNovoLembrete({...novoLembrete, freqMeses: e.target.value})}>
+                                                        <option value="">Apenas KM...</option>
+                                                        <option value="3">A cada 3 meses</option>
+                                                        <option value="6">A cada 6 meses</option>
+                                                        <option value="12">A cada 12 meses (Anual)</option>
+                                                        <option value="24">A cada 24 meses</option>
+                                                        <option value="36">A cada 36 meses</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-2 bg-white p-2 rounded-xl border">
+                                                <div>
+                                                    <label className="text-[9px] font-bold text-slate-500 uppercase">KM da Última Troca</label>
+                                                    <input type="number" className="w-full border p-2 rounded-lg text-sm bg-slate-50" value={novoLembrete.ultimoKm} onChange={e => setNovoLembrete({...novoLembrete, ultimoKm: e.target.value})} />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[9px] font-bold text-slate-500 uppercase">Data da Última Troca</label>
+                                                    <input type="date" className="w-full border p-2 rounded-lg text-sm bg-slate-50" value={novoLembrete.ultimaData} onChange={e => setNovoLembrete({...novoLembrete, ultimaData: e.target.value})} />
+                                                </div>
+                                            </div>
+                                            
+                                            <button onClick={handleAddLembrete} className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold p-3 rounded-xl text-sm shadow transition">Guardar Alerta</button>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <h3 className="font-bold text-slate-700 text-sm mt-4">Regras Ativas ({lembretesFiltrados.length})</h3>
+                                            {lembretesFiltrados.map(l => (
+                                                <div key={l.id} className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
+                                                    <div>
+                                                        <p className="font-bold text-sm text-slate-800">{l.tipo}</p>
+                                                        <p className="text-[10px] text-slate-500">
+                                                            {l.freqKm && <span>A cada {l.freqKm} km</span>} 
+                                                            {l.freqKm && l.freqMeses && <span> OU </span>}
+                                                            {l.freqMeses && <span>A cada {l.freqMeses} meses</span>}
+                                                        </p>
+                                                    </div>
+                                                    <button onClick={() => removerLembrete(l.id)} className="bg-red-50 text-red-600 p-2 rounded-lg text-xs font-bold hover:bg-red-100">Excluir</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* VIEW: ABASTECIMENTO */}
+                                {view === 'abastecimento' && !isGlobal && (
+                                    <div className="bg-white p-1 animate-fade-in">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                                {editingDespesaIndex !== null ? '✏️ Editar Abastecimento' : '⛽ Novo Abastecimento'}
+                                            </h2>
+                                            {editingDespesaIndex !== null && (
+                                                <button onClick={cancelarEdicao} className="text-xs bg-slate-200 text-slate-600 px-3 py-1 rounded-full font-bold">Cancelar Edição</button>
+                                            )}
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            <input type="date" className="w-full border p-3 rounded-xl bg-slate-50" value={novaDespesa.data} onChange={e => setNovaDespesa({...novaDespesa, data: e.target.value})} />
+                                            <input type="number" className="w-full border p-3 rounded-xl" placeholder={`KM da Bomba (Atual do veículo: ${kmAtualNum})`} value={novaDespesa.km} onChange={e => setNovaDespesa({...novaDespesa, km: e.target.value})} />
+                                            <input className="w-full border p-3 rounded-xl" placeholder="Posto / Fornecedor" value={novaDespesa.fornecedor} onChange={e => setNovaDespesa({...novaDespesa, fornecedor: e.target.value})} />
+                                            
+                                            <input type="number" className="w-full border p-3 rounded-xl font-bold text-blue-700 text-lg" placeholder="Valor Total da Nota (R$)" value={novaDespesa.valor} onChange={e => setNovaDespesa({...novaDespesa, valor: e.target.value})} />
+                                            
+                                            <label className="block bg-slate-50 border border-dashed border-slate-300 p-4 rounded-xl text-center cursor-pointer hover:bg-slate-100 transition">
+                                                <span className="text-sm font-bold text-slate-600">📸 Anexar Foto do Cupom</span>
+                                                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} />
+                                            </label>
+                                            
+                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} anexo(s) carregado(s).</p>}
+                                            {formError && <p className="text-red-500 font-bold text-sm text-center">{formError}</p>}
+                                            <button onClick={handleAddDespesa} className={`w-full text-white font-bold p-4 rounded-xl shadow-lg transition ${editingDespesaIndex !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-700 hover:bg-blue-800'}`}>
+                                                {editingDespesaIndex !== null ? 'Guardar Alterações' : 'Confirmar Abastecimento'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* VIEW: ORDEM DE SERVIÇO */}
+                                {view === 'os' && !isGlobal && (
+                                    <div className="bg-white p-1 animate-fade-in">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                                {editingDespesaIndex !== null ? '✏️ Editar Ordem de Serviço' : '🔧 Nova Ordem de Serviço'}
+                                            </h2>
+                                            {editingDespesaIndex !== null && (
+                                                <button onClick={cancelarEdicao} className="text-xs bg-slate-200 text-slate-600 px-3 py-1 rounded-full font-bold">Cancelar Edição</button>
+                                            )}
+                                        </div>
+                                        
+                                        <div className="space-y-3">
+                                            <select className="w-full bg-slate-50 p-3 rounded-xl font-bold text-slate-700 border outline-none" value={novaDespesa.categoria} onChange={e => setNovaDespesa({...novaDespesa, categoria: e.target.value})}>
+                                                <option value="Mecânica / Manutenção">Manutenção Mecânica</option>
+                                                <option value="Troca de Óleo / Filtros">Troca de Óleo / Filtros</option>
+                                                <option value="Pneus / Borracharia">Pneus / Borracharia</option>
+                                                <option value="Lavagem / Estética">Lavagem / Estética</option>
+                                                <option value="Documentação / Seguro">Documentação / Seguro / IPVA</option>
+                                            </select>
+                                            
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <select className="w-full border p-2 rounded-xl text-xs font-semibold" value={novaDespesa.tipoOS} onChange={e=>setNovaDespesa({...novaDespesa, tipoOS: e.target.value})}>
+                                                    <option value="Corretiva">Corretiva</option>
+                                                    <option value="Preventiva">Preventiva</option>
+                                                </select>
+                                                <select className="w-full border p-2 rounded-xl text-xs font-semibold" value={novaDespesa.localOS} onChange={e=>setNovaDespesa({...novaDespesa, localOS: e.target.value})}>
+                                                    <option value="Externa">Externa</option>
+                                                    <option value="Interna">Interna</option>
+                                                </select>
+                                                <select className="w-full border p-2 rounded-xl text-xs font-semibold bg-slate-100" value={novaDespesa.situacao} onChange={e=>setNovaDespesa({...novaDespesa, situacao: e.target.value})}>
+                                                    <option value="Orçamento">📝 Orçamento</option>
+                                                    <option value="Em Andamento">⏳ Em Andamento</option>
+                                                    <option value="Concluída">✅ Concluída</option>
+                                                </select>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <input type="date" className="w-full border p-3 rounded-xl bg-slate-50" value={novaDespesa.data} onChange={e => setNovaDespesa({...novaDespesa, data: e.target.value})} />
+                                                <input type="number" className="w-full border p-3 rounded-xl" placeholder={`KM (Atual: ${kmAtualNum})`} value={novaDespesa.km} onChange={e => setNovaDespesa({...novaDespesa, km: e.target.value})} />
+                                            </div>
+                                            
+                                            <input className="w-full border p-3 rounded-xl" placeholder="Oficina / Fornecedor" value={novaDespesa.fornecedor} onChange={e => setNovaDespesa({...novaDespesa, fornecedor: e.target.value})} />
+                                            <textarea rows="2" className="w-full border p-3 rounded-xl outline-none" placeholder="Descrição do Serviço realizado..." value={novaDespesa.descricao} onChange={e => setNovaDespesa({...novaDespesa, descricao: e.target.value})}></textarea>
+                                            
+                                            <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl mt-2">
+                                                <h3 className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">💳 Valores Financeiros</h3>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <input type="number" className="w-full border p-2 rounded-lg text-sm bg-white" placeholder="Mão de Obra (R$)" value={novaDespesa.valorMaoObra} onChange={e=>setNovaDespesa({...novaDespesa, valorMaoObra: e.target.value})} />
+                                                    <input type="number" className="w-full border p-2 rounded-lg text-sm bg-white" placeholder="Peças (R$)" value={novaDespesa.valorPecas} onChange={e=>setNovaDespesa({...novaDespesa, valorPecas: e.target.value})} />
+                                                </div>
+                                                <div className="mt-3 text-right border-t border-slate-200 pt-2 flex justify-between items-center">
+                                                    <span className="text-xs font-bold text-slate-500 uppercase">Custo Total da O.S.</span>
+                                                    <span className="text-xl font-black text-blue-700">
+                                                        {formatCurrency((parseFloat(novaDespesa.valorMaoObra) || 0) + (parseFloat(novaDespesa.valorPecas) || 0))}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            
+                                            <label className="block bg-slate-50 border border-dashed border-slate-300 p-4 rounded-xl text-center cursor-pointer hover:bg-slate-100 transition">
+                                                <span className="text-sm font-bold text-slate-600">📸 Anexar O.S. ou Fatura</span>
+                                                <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
+                                            </label>
+
+                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} anexo(s) carregado(s).</p>}
+                                            {formError && <p className="text-red-500 font-bold text-sm text-center">{formError}</p>}
+                                            
+                                            <button onClick={handleAddDespesa} className={`w-full text-white font-bold p-4 rounded-xl shadow-lg transition ${editingDespesaIndex !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-800 hover:bg-slate-900'}`}>
+                                                {editingDespesaIndex !== null ? 'Guardar Alterações' : 'Registar Ordem de Serviço'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* VIEW: HISTÓRICO E RELATÓRIOS */}
+                                {view === 'historico' && (
+                                    <div className="animate-fade-in space-y-4">
+                                        <div className="flex justify-between items-center">
+                                            <h2 className="text-xl font-bold text-slate-800">🧾 Histórico da Frota</h2>
+                                            <button onClick={generatePDF} disabled={isGenerating || despesasFiltradas.length === 0} className="bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-lg shadow disabled:opacity-50 hover:bg-slate-900 transition">
+                                                {isGenerating ? 'A exportar...' : 'Exportar PDF'}
+                                            </button>
+                                        </div>
+
+                                        {despesasFiltradas.length === 0 ? (
+                                            <p className="text-center text-slate-400 py-10">Nenhum registo encontrado.</p>
+                                        ) : (
+                                            despesasFiltradas.map((d, i) => (
+                                                <div key={i} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                                                    <div className="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
+                                                        <div>
+                                                            <span className="font-bold text-slate-800 uppercase block text-sm flex items-center gap-2">
+                                                                {d.categoria}
+                                                                {isGlobal && <span className="bg-blue-100 text-blue-800 text-[10px] px-2 py-0.5 rounded font-black">{d.placa}</span>}
+                                                            </span>
+                                                            <span className="text-xs text-slate-500">{d.data} • KM: {d.km || '-'}</span>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <span className="text-lg font-black text-blue-700 block">{formatCurrency(d.valor)}</span>
+                                                            {d.situacao && (
+                                                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase mt-1 inline-block ${getCorSituacao(d.situacao)}`}>
+                                                                    {getIconeSituacao(d.situacao)} {d.situacao}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="text-sm text-slate-600 leading-tight space-y-1">
+                                                        {d.fornecedor && <p>🏢 <strong>{d.fornecedor}</strong></p>}
+                                                        {d.descricao && <p>🔧 {d.descricao}</p>}
+                                                        
+                                                        {(d.valorMaoObra || d.valorPecas) && (
+                                                            <div className="bg-slate-50 p-2 rounded border border-slate-200 mt-2 grid grid-cols-2 text-xs">
+                                                                <p className="text-slate-500">Mão de Obra: <strong className="text-slate-800">{d.valorMaoObra ? formatCurrency(d.valorMaoObra) : 'R$ 0,00'}</strong></p>
+                                                                <p className="text-slate-500">Peças: <strong className="text-slate-800">{d.valorPecas ? formatCurrency(d.valorPecas) : 'R$ 0,00'}</strong></p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-100">
+                                                        {d.anexos && d.anexos.length > 0 ? (
+                                                            <details className="text-sm">
+                                                                <summary className="text-blue-700 font-bold bg-blue-50 px-3 py-1 rounded-lg border border-blue-100 inline-block focus:outline-none">
+                                                                    📸 Ver {d.anexos.length} Anexo(s) ▾
+                                                                </summary>
+                                                                <div className="flex flex-wrap gap-2 mt-2 p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                                                    {d.anexos.map((img, idx) => <img key={idx} src={img} className="h-16 w-16 object-cover rounded shadow-sm border border-slate-300" />)}
+                                                                </div>
+                                                            </details>
+                                                        ) : <div className="text-xs text-slate-300">Sem anexos</div>}
+                                                        
+                                                        <div className="flex gap-4">
+                                                            <button onClick={() => handleEditDespesa(d)} className="text-amber-600 text-xs font-bold underline hover:text-amber-800">Editar</button>
+                                                            <button onClick={() => removerDespesa(d)} className="text-red-500 text-xs font-bold underline hover:text-red-700">Eliminar</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        
+                        {/* MENU INFERIOR */}
+                        {!showCadastro && veiculos.length > 0 && (
+                            <div className="fixed md:absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 px-1 py-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 overflow-x-auto hide-scroll">
+                                <div className="flex justify-between items-center min-w-full gap-1">
+                                    <button onClick={() => { setView('dashboard'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'dashboard' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                        <span className="text-xl mb-0.5">🏠</span>
+                                        <span className="text-[9px] font-bold uppercase tracking-tighter">Painel</span>
+                                    </button>
+                                    <button onClick={() => { setView('lembretes'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'lembretes' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                        <span className="text-xl mb-0.5">🔔</span>
+                                        <span className="text-[9px] font-bold uppercase tracking-tighter">Alertas</span>
+                                    </button>
+                                    <button onClick={() => { setView('abastecimento'); if(editingDespesaIndex === null) setNovaDespesa({...novaDespesa, categoria: 'Abastecimento', situacao: 'Concluída'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                        <span className="text-xl mb-0.5">⛽</span>
+                                        <span className="text-[9px] font-bold uppercase tracking-tighter">Posto</span>
+                                    </button>
+                                    <button onClick={() => { setView('os'); if(editingDespesaIndex === null) setNovaDespesa({...novaDespesa, categoria: 'Mecânica / Manutenção', situacao: 'Concluída'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'os' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                        <span className="text-xl mb-0.5">🔧</span>
+                                        <span className="text-[9px] font-bold uppercase tracking-tighter">O.S.</span>
+                                    </button>
+                                    <button onClick={() => { setView('historico'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'historico' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                        <span className="text-xl mb-0.5">🧾</span>
+                                        <span className="text-[9px] font-bold uppercase tracking-tighter">Histórico</span>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* PDF INVISÍVEL */}
+                    <div id="pdf-content" style={{ display: 'none', width: '100%', backgroundColor: 'white', color: 'black', fontFamily: 'Arial', padding: '10px' }}>
+                        <div className="bg-slate-800 text-white rounded-lg p-2 mb-3 text-center">
+                            <h1 className="text-xl font-bold uppercase">{isGlobal ? 'Dossiê Consolidado RUBI FROTA' : 'Dossiê de Manutenção'}</h1>
+                        </div>
+                        <div className="border border-slate-300 rounded-lg p-3 mb-4 text-sm">
+                            <div className="grid grid-cols-2 gap-2">
+                                {isGlobal ? (
+                                    <>
+                                        <div><p className="text-[10px] text-slate-500 font-bold uppercase">Empresa / Frota</p><p className="font-bold">Visão Global</p></div>
+                                        <div><p className="text-[10px] text-slate-500 font-bold uppercase">Total Veículos Registados</p><p className="font-bold">{veiculos.length}</p></div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div><p className="text-[10px] text-slate-500 font-bold uppercase">Veículo</p><p className="font-bold">{veiculoAtual?.veiculo}</p></div>
+                                        <div><p className="text-[10px] text-slate-500 font-bold uppercase">Matrícula</p><p className="font-bold">{veiculoAtual?.placa}</p></div>
+                                    </>
+                                )}
+                                <div className="col-span-2 pt-2 border-t border-slate-200 mt-1 flex justify-between">
+                                    <p className="text-[10px] text-slate-500 font-bold uppercase">Custo Total Registado</p>
+                                    <p className="font-black text-blue-800 text-base">{formatCurrency(totalGasto)}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="space-y-4">
+                            {despesasFiltradas.map((d, idx) => (
+                                <div key={idx} className="break-inside-avoid border-b pb-3 mb-3">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <h2 className="text-sm font-black uppercase text-slate-800">
+                                            #{idx + 1} - {d.categoria} 
+                                            {isGlobal && ` [Viatura: ${d.placa}]`}
+                                        </h2>
+                                        <p className="text-sm font-black">{formatCurrency(d.valor)}</p>
+                                    </div>
+                                    
+                                    <div className="flex justify-between items-center mb-1">
+                                        <p className="text-[10px] font-bold text-slate-500">{d.data} • KM: {d.km || 'N/I'}</p>
+                                        {d.situacao && <p className="text-[9px] font-bold text-slate-500 uppercase">Estado: {d.situacao}</p>}
+                                    </div>
+
+                                    <div className="bg-slate-50 p-2 rounded text-[11px] border border-slate-200">
+                                        {d.tipoOS && <p><strong>Intervenção:</strong> {d.tipoOS} | <strong>Local:</strong> {d.localOS}</p>}
+                                        <p><strong>Fornecedor:</strong> {d.fornecedor || 'N/A'}</p>
+                                        {d.descricao && <p><strong>Descrição:</strong> {d.descricao}</p>}
+                                        
+                                        {(d.valorMaoObra || d.valorPecas) && (
+                                            <div className="border-t border-slate-200 mt-2 pt-1 flex gap-4 text-[10px] text-slate-600">
+                                                <span>Mão de Obra: <strong>{d.valorMaoObra ? formatCurrency(d.valorMaoObra) : 'R$ 0,00'}</strong></span>
+                                                <span>Peças: <strong>{d.valorPecas ? formatCurrency(d.valorPecas) : 'R$ 0,00'}</strong></span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    
+                                    {d.anexos && d.anexos.length > 0 && (
+                                        <div className="mt-2 flex flex-wrap gap-2 justify-center">
+                                            {d.anexos.map((img, i) => <img key={i} src={img} className="max-h-[300px] max-w-[45%] object-contain border border-slate-300 rounded p-1" />)}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<ControleFrotaMulti />);
+    </script>
+</body>
+</html>
