@@ -428,6 +428,9 @@
                 }
             };
 
+            // ==========================================
+            // LÓGICA DE ROTAS COM DATA/HORA AUTOMÁTICA
+            // ==========================================
             const handleCriarRota = () => {
                 if(isGlobal) return alert('Selecione uma viatura para delegar a rota.');
                 if(!novaRotaGestor.origem || !novaRotaGestor.destino) return alert('Origem e destino são obrigatórios.');
@@ -445,21 +448,36 @@
                     const parsed = JSON.parse(rascunhoStr);
                     if (parsed.id === rota.id) { setExecucaoRota(parsed); return; }
                 }
-                setExecucaoRota({ ...rota, data: new Date().toISOString().split('T')[0], kmInicial: kmAtualNum });
+                
+                // GERA DATA E HORA DE PARTIDA AUTOMÁTICA
+                const agora = new Date();
+                const dataStr = agora.toLocaleDateString('pt-BR');
+                const horaStr = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                
+                setExecucaoRota({ ...rota, dataInicial: `${dataStr} ${horaStr}`, kmInicial: kmAtualNum });
             };
 
             const handleSalvarRascunhoRota = () => { localStorage.setItem('rubi_frota_rascunho_rota', JSON.stringify(execucaoRota)); alert('💾 Rascunho da viagem salvo!'); };
 
             const handleConcluirRota = () => {
-                if(!execucaoRota.data || !execucaoRota.kmInicial || !execucaoRota.kmFinal || !execucaoRota.motorista) return setFormError('Data, Motorista, KM Inicial e Final são obrigatórios.');
+                if(!execucaoRota.kmInicial || !execucaoRota.kmFinal || !execucaoRota.motorista) return setFormError('Motorista, KM Inicial e Final são obrigatórios.');
                 if(parseFloat(execucaoRota.kmFinal) <= parseFloat(execucaoRota.kmInicial)) return setFormError('O KM Final deve ser maior que o KM Inicial.');
                 setFormError('');
                 
                 const novosVeiculos = atualizarKmVeiculo(execucaoRota.kmFinal, veiculoAtivo);
                 setVeiculos(novosVeiculos);
                 
-                // Mudei a ordem: o status 'Concluída' sobrepõe o status antigo do execucaoRota
-                const novasRotas = rotas.map(r => r.id === execucaoRota.id ? { ...r, ...execucaoRota, status: 'Concluída' } : r);
+                let novaData = execucaoRota.data;
+                
+                // SE O MOTORISTA ESTÁ A CONCLUIR A ROTA PENDENTE, GERA A DATA/HORA FINAL AUTOMÁTICA
+                if (execucaoRota.status === 'Pendente') {
+                    const agora = new Date();
+                    const dataStr = agora.toLocaleDateString('pt-BR');
+                    const horaStr = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                    novaData = `${execucaoRota.dataInicial || ''} até ${dataStr} ${horaStr}`;
+                }
+                
+                const novasRotas = rotas.map(r => r.id === execucaoRota.id ? { ...r, ...execucaoRota, data: novaData, status: 'Concluída' } : r);
                 setRotas(novasRotas);
                 salvarNaNuvem(novosVeiculos, despesas, lembretes, novasRotas);
                 
@@ -622,8 +640,6 @@
                                 {/* 1. DASHBOARD */}
                                 {view === 'dashboard' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
-                                        
-                                        {/* Ações de Backup na Visão Global */}
                                         {isGlobal && (
                                             <div className="flex justify-between items-center bg-slate-50 border border-slate-200 p-2 rounded-xl">
                                                 <span className="text-[10px] font-bold text-slate-500 px-2">SEGURANÇA (JSON)</span>
@@ -635,7 +651,6 @@
                                                 </div>
                                             </div>
                                         )}
-
                                         <div className="bg-slate-800 text-white p-4 rounded-2xl shadow-sm flex flex-col gap-3">
                                             <div className="flex justify-between items-center border-b border-slate-700 pb-3">
                                                 <div>
@@ -658,50 +673,42 @@
 
                                         {/* GRÁFICOS INTELIGENTES (Com Empty States para não parecer erro) */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {/* Gráficos Globais (Empresa) */}
                                             {isGlobal && (!dataPorCategoria || dataPorCategoria.labels.length === 0) && (
                                                 <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
                                                     <span className="text-3xl block mb-2 opacity-50">📊</span>
                                                     <p className="text-slate-500 text-sm font-bold">Os gráficos da empresa aparecerão aqui assim que registar a primeira Despesa ou Abastecimento.</p>
                                                 </div>
                                             )}
-
                                             {isGlobal && dataPorCategoria && dataPorCategoria.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Distribuição de Custos</h3>
                                                     <ChartWrapper type="doughnut" data={dataPorCategoria} options={{ plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: {size: 10} } } } }} />
                                                 </div>
                                             )}
-                                            
                                             {isGlobal && dataRankingVeiculos && dataRankingVeiculos.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Top Custos por Viatura</h3>
                                                     <ChartWrapper type="bar" data={dataRankingVeiculos} options={{ indexAxis: 'y', plugins: { legend: { display: false } } }} />
                                                 </div>
                                             )}
-
                                             {isGlobal && dataEvolucaoMensal && dataEvolucaoMensal.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Evolução Mensal de Gastos</h3>
                                                     <ChartWrapper type="bar" data={dataEvolucaoMensal} options={{}} />
                                                 </div>
                                             )}
-
-                                            {/* Gráficos Individuais (Por Carro) */}
                                             {!isGlobal && (!dataConsumo || dataConsumo.labels.length === 0) && (!dataPecasMO) && (
                                                 <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
                                                     <span className="text-3xl block mb-2 opacity-50">📉</span>
                                                     <p className="text-slate-500 text-sm font-bold">Os gráficos deste veículo aparecerão aqui quando efetuar o primeiro abastecimento (com litros) ou O.S.</p>
                                                 </div>
                                             )}
-
                                             {!isGlobal && dataConsumo && dataConsumo.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Evolução de Consumo (KM/L)</h3>
                                                     <ChartWrapper type="line" data={dataConsumo} options={{ scales: { y: { beginAtZero: false } } }} />
                                                 </div>
                                             )}
-
                                             {!isGlobal && dataPecasMO && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Custo de Manutenção</h3>
@@ -780,7 +787,7 @@
                                 )}
 
                                 {/* =======================================
-                                    2. ROTAS (Com Edição para Gestor)
+                                    2. ROTAS (Com Data/Hora Automática)
                                 ======================================== */}
                                 {view === 'rotas' && !isGlobal && (
                                     <div className="animate-fade-in space-y-4">
@@ -797,7 +804,7 @@
                                             </div>
                                         )}
 
-                                        {/* Formulário de Execução / Edição (Visível para Gestor ou Motorista) */}
+                                        {/* Formulário de Execução / Edição */}
                                         {execucaoRota !== null ? (
                                             <div className="bg-white p-4 rounded-2xl border border-amber-300 shadow-lg relative">
                                                 <button onClick={() => setExecucaoRota(null)} className="absolute top-4 right-4 text-slate-400 font-bold text-xs bg-slate-100 px-2 py-1 rounded">Voltar</button>
@@ -807,7 +814,7 @@
                                                 </h3>
                                                 
                                                 <div className="space-y-3">
-                                                    {/* Origem e Destino em inputs para poder editar */}
+                                                    {/* Origem e Destino */}
                                                     <div className="grid grid-cols-2 gap-2">
                                                         <div>
                                                             <label className="text-[9px] font-bold text-slate-500 uppercase">Origem</label>
@@ -824,10 +831,30 @@
                                                         <label className="text-[9px] font-bold text-slate-500 uppercase">Observações (Opcional)</label>
                                                         <input className="w-full border p-2 rounded-lg text-sm bg-blue-50" placeholder="Sem observações..." value={execucaoRota.observacoes} onChange={e => setExecucaoRota({...execucaoRota, observacoes: e.target.value})} />
                                                     </div>
+                                                    
+                                                    {/* HORÁRIOS AUTOMÁTICOS */}
+                                                    <div className="grid grid-cols-1 gap-2 mt-2">
+                                                        {execucaoRota.status === 'Pendente' ? (
+                                                            <div className="flex justify-between items-center bg-blue-50 p-3 rounded-xl border border-blue-100">
+                                                                <div>
+                                                                    <p className="text-[10px] font-bold text-blue-700 uppercase">Partida</p>
+                                                                    <p className="text-sm font-black text-slate-800">{execucaoRota.dataInicial}</p>
+                                                                </div>
+                                                                <div className="text-right">
+                                                                    <p className="text-[10px] font-bold text-blue-700 uppercase">Chegada</p>
+                                                                    <p className="text-sm font-black text-slate-400 italic">Preenchido ao concluir</p>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div>
+                                                                <label className="text-[9px] font-bold text-slate-500 uppercase">Período da Viagem (Início até Fim)</label>
+                                                                <input type="text" className="w-full border p-3 rounded-xl bg-white text-sm" value={execucaoRota.data} onChange={e => setExecucaoRota({...execucaoRota, data: e.target.value})} />
+                                                            </div>
+                                                        )}
+                                                    </div>
 
-                                                    <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-200">
-                                                        <input type="date" className="w-full border p-3 rounded-xl bg-slate-50 text-sm" value={execucaoRota.data} onChange={e => setExecucaoRota({...execucaoRota, data: e.target.value})} />
-                                                        <input className="w-full border p-3 rounded-xl text-sm" placeholder="Motorista" value={execucaoRota.motorista} onChange={e => setExecucaoRota({...execucaoRota, motorista: e.target.value})} />
+                                                    <div className="grid grid-cols-1 gap-2 pt-2 border-t border-slate-200">
+                                                        <input className="w-full border p-3 rounded-xl text-sm" placeholder="Motorista (Obrigatório)" value={execucaoRota.motorista} onChange={e => setExecucaoRota({...execucaoRota, motorista: e.target.value})} />
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-2">
                                                         <input className="w-full border p-3 rounded-xl text-sm" placeholder="Ajudante 1 (Opc)" value={execucaoRota.ajudante1} onChange={e => setExecucaoRota({...execucaoRota, ajudante1: e.target.value})} />
@@ -879,7 +906,7 @@
 
                                                         {r.status === 'Concluída' && (
                                                             <div className="bg-white p-2 rounded text-[11px] border border-slate-200 mb-3 shadow-sm">
-                                                                <p className="text-slate-600 mb-1">📅 <strong>Data:</strong> {r.data}</p>
+                                                                <p className="text-slate-600 mb-1">📅 <strong>Período:</strong> {r.data}</p>
                                                                 <p className="text-slate-600 mb-1">👨‍✈️ <strong>Motorista:</strong> {r.motorista}</p>
                                                                 {(r.ajudante1 || r.ajudante2) && <p className="text-slate-600 mb-1">👥 <strong>Ajudantes:</strong> {r.ajudante1} {r.ajudante2 ? `/ ${r.ajudante2}` : ''}</p>}
                                                                 <p className="text-slate-600">🛣️ <strong>KM:</strong> Inicial <span className="font-bold">{r.kmInicial}</span> ➔ Final <span className="font-bold">{r.kmFinal}</span></p>
@@ -1115,12 +1142,27 @@
                             </div>
                         )}
                     </div>
+                    
+                    <div id="pdf-content" style={{ display: 'none', width: '100%', backgroundColor: 'white', color: 'black', fontFamily: 'Arial', padding: '10px' }}>
+                        <div className="bg-slate-800 text-white rounded-lg p-2 mb-3 text-center">
+                            <h1 className="text-xl font-bold uppercase">{isGlobal ? 'Dossiê Consolidado RUBI FROTA' : 'Dossiê de Manutenção'}</h1>
+                        </div>
+                    </div>
                 </div>
             );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ControleFrotaMulti />);
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => console.log('✅ Service Worker registado!', reg))
+                    .catch(err => console.error('❌ Erro no Service Worker', err));
+            });
+        }
     </script>
 </body>
 </html>
