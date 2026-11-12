@@ -45,6 +45,9 @@
             const [formError, setFormError] = useState('');
             const [syncStatus, setSyncStatus] = useState('☁️ A conectar...');
             const [editingDespesaIndex, setEditingDespesaIndex] = useState(null);
+            
+            // NOVO ESTADO: Upload de Imagens
+            const [isUploading, setIsUploading] = useState(false);
 
             const [novoVeiculo, setNovoVeiculo] = useState({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
 
@@ -345,25 +348,62 @@
                 return 'OK';
             };
 
-            const handleImageUpload = (e) => {
+            // UPLOAD PARA O GOOGLE DRIVE
+            const handleImageUpload = async (e) => {
                 const arquivos = Array.from(e.target.files);
-                arquivos.forEach(file => {
-                    const reader = new FileReader();
-                    reader.onload = event => {
-                        const img = new Image();
-                        img.onload = () => {
-                            const canvas = document.createElement('canvas');
-                            const ctx = canvas.getContext('2d');
-                            let w = img.width, h = img.height;
-                            if (w > 1200) { h *= 1200 / w; w = 1200; }
-                            canvas.width = w; canvas.height = h;
-                            ctx.drawImage(img, 0, 0, w, h);
-                            setNovaDespesa(prev => ({ ...prev, anexos: [...(prev.anexos || []), canvas.toDataURL('image/jpeg', 0.7)] }));
+                if (arquivos.length === 0) return;
+                
+                setIsUploading(true);
+                setFormError('');
+
+                const uploadPromises = arquivos.map(file => {
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = event => {
+                            const img = new Image();
+                            img.onload = async () => {
+                                // Comprime a imagem para não estoirar o Drive
+                                const canvas = document.createElement('canvas');
+                                const ctx = canvas.getContext('2d');
+                                let w = img.width, h = img.height;
+                                if (w > 1200) { h *= 1200 / w; w = 1200; }
+                                canvas.width = w; canvas.height = h;
+                                ctx.drawImage(img, 0, 0, w, h);
+                                
+                                const base64Data = canvas.toDataURL('image/jpeg', 0.7);
+                                const fileName = `FROTA_${Date.now()}.jpg`;
+
+                                try {
+                                    const response = await fetch(SCRIPT_URL, {
+                                        method: 'POST',
+                                        body: JSON.stringify({
+                                            action: 'upload_imagem',
+                                            base64: base64Data,
+                                            nomeArquivo: fileName,
+                                            mimeType: 'image/jpeg'
+                                        })
+                                    });
+                                    const result = await response.json();
+                                    if (result.status === 'sucesso') resolve(result.url);
+                                    else reject('Erro ao enviar.');
+                                } catch (err) {
+                                    reject('Erro de conexão.');
+                                }
+                            };
+                            img.src = event.target.result;
                         };
-                        img.src = event.target.result;
-                    };
-                    reader.readAsDataURL(file);
+                        reader.readAsDataURL(file);
+                    });
                 });
+
+                try {
+                    const uploadedUrls = await Promise.all(uploadPromises);
+                    setNovaDespesa(prev => ({ ...prev, anexos: [...(prev.anexos || []), ...uploadedUrls] }));
+                } catch (err) {
+                    setFormError('Erro ao carregar uma ou mais imagens. Tente novamente.');
+                } finally {
+                    setIsUploading(false);
+                }
             };
 
             const generatePDF = () => {
@@ -645,7 +685,7 @@
                                                 {editingDespesaIndex !== null ? '✏️ Editar Abastecimento' : '⛽ Novo Abastecimento'}
                                             </h2>
                                             {editingDespesaIndex !== null && (
-                                                <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-600 px-3 py-1 rounded-full font-bold">Cancelar Edição</button>
+                                                <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-600 px-3 py-1 rounded-full font-bold">Cancelar</button>
                                             )}
                                         </div>
                                         <div className="space-y-3">
@@ -653,14 +693,19 @@
                                             <input type="number" className="w-full border p-3 rounded-xl" placeholder={`KM da Bomba (Atual: ${kmAtualNum})`} value={novaDespesa.km} onChange={e => setNovaDespesa({...novaDespesa, km: e.target.value})} />
                                             <input className="w-full border p-3 rounded-xl" placeholder="Posto / Fornecedor" value={novaDespesa.fornecedor} onChange={e => setNovaDespesa({...novaDespesa, fornecedor: e.target.value})} />
                                             <input type="number" className="w-full border p-3 rounded-xl font-bold text-blue-700 text-lg" placeholder="Valor Total da Nota (R$)" value={novaDespesa.valor} onChange={e => setNovaDespesa({...novaDespesa, valor: e.target.value})} />
-                                            <label className="block bg-slate-50 border border-dashed border-slate-300 p-4 rounded-xl text-center cursor-pointer">
-                                                <span className="text-sm font-bold text-slate-600">📸 Anexar Foto do Cupom</span>
-                                                <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                                            
+                                            <label className={`block bg-slate-50 border border-dashed p-4 rounded-xl text-center cursor-pointer ${isUploading ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}>
+                                                <span className={`text-sm font-bold ${isUploading ? 'text-amber-600' : 'text-slate-600'}`}>
+                                                    {isUploading ? '⏳ A carregar foto para a nuvem...' : '📸 Anexar Foto do Cupom'}
+                                                </span>
+                                                <input type="file" accept="image/*" className="hidden" disabled={isUploading} onChange={handleImageUpload} />
                                             </label>
-                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} anexo(s) carregado(s).</p>}
+                                            
+                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} foto(s) na nuvem.</p>}
                                             {formError && <p className="text-red-500 font-bold text-sm text-center">{formError}</p>}
-                                            <button onClick={handleAddDespesa} className={`w-full text-white font-bold p-4 rounded-xl shadow-lg transition ${editingDespesaIndex !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-700 hover:bg-blue-800'}`}>
-                                                {editingDespesaIndex !== null ? 'Guardar Alterações' : 'Confirmar Abastecimento'}
+                                            
+                                            <button onClick={handleAddDespesa} disabled={isUploading} className={`w-full text-white font-bold p-4 rounded-xl shadow-lg transition ${isUploading ? 'bg-slate-400 cursor-not-allowed' : editingDespesaIndex !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-700 hover:bg-blue-800'}`}>
+                                                {isUploading ? 'Aguarde o Upload...' : editingDespesaIndex !== null ? 'Guardar Alterações' : 'Confirmar Abastecimento'}
                                             </button>
                                         </div>
                                     </div>
@@ -715,15 +760,18 @@
                                                 </div>
                                             </div>
                                             
-                                            <label className="block bg-slate-50 border border-dashed border-slate-300 p-4 rounded-xl text-center cursor-pointer">
-                                                <span className="text-sm font-bold text-slate-600">📸 Anexar O.S. ou Fatura</span>
-                                                <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
+                                            <label className={`block bg-slate-50 border border-dashed p-4 rounded-xl text-center cursor-pointer ${isUploading ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}>
+                                                <span className={`text-sm font-bold ${isUploading ? 'text-amber-600' : 'text-slate-600'}`}>
+                                                    {isUploading ? '⏳ A carregar foto para a nuvem...' : '📸 Anexar O.S. ou Fatura'}
+                                                </span>
+                                                <input type="file" accept="image/*" multiple className="hidden" disabled={isUploading} onChange={handleImageUpload} />
                                             </label>
 
-                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} anexo(s) carregado(s).</p>}
+                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} foto(s) na nuvem.</p>}
                                             {formError && <p className="text-red-500 font-bold text-sm text-center">{formError}</p>}
-                                            <button onClick={handleAddDespesa} className={`w-full text-white font-bold p-4 rounded-xl shadow-lg transition ${editingDespesaIndex !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-800 hover:bg-slate-900'}`}>
-                                                {editingDespesaIndex !== null ? 'Guardar Alterações' : 'Registar Ordem de Serviço'}
+                                            
+                                            <button onClick={handleAddDespesa} disabled={isUploading} className={`w-full text-white font-bold p-4 rounded-xl shadow-lg transition ${isUploading ? 'bg-slate-400 cursor-not-allowed' : editingDespesaIndex !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-800 hover:bg-slate-900'}`}>
+                                                {isUploading ? 'Aguarde o Upload...' : editingDespesaIndex !== null ? 'Guardar Alterações' : 'Registar Ordem de Serviço'}
                                             </button>
                                         </div>
                                     </div>
@@ -816,16 +864,19 @@
                                                     </div>
                                                     <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-100">
                                                         {d.anexos && d.anexos.length > 0 ? (
-                                                            <details className="text-sm">
-                                                                <summary className="text-blue-700 font-bold bg-blue-50 px-3 py-1 rounded-lg border border-blue-100 inline-block">📸 Ver {d.anexos.length} Anexo(s) ▾</summary>
-                                                                <div className="flex flex-wrap gap-2 mt-2 p-2 bg-slate-50 rounded-lg border border-slate-200">
-                                                                    {d.anexos.map((img, idx) => <img key={idx} src={img} className="h-16 w-16 object-cover rounded shadow-sm border border-slate-300" />)}
+                                                            <details className="text-sm w-full">
+                                                                <summary className="text-blue-700 font-bold bg-blue-50 px-3 py-1 rounded-lg border border-blue-100 inline-block">📸 Ver {d.anexos.length} Anexo(s) na Nuvem ▾</summary>
+                                                                <div className="flex flex-col gap-2 mt-2 p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                                                    {d.anexos.map((url, idx) => (
+                                                                        <a key={idx} href={url} target="_blank" className="text-blue-600 underline text-xs break-all">🔗 Abrir Anexo {idx+1}</a>
+                                                                    ))}
                                                                 </div>
                                                             </details>
-                                                        ) : <div className="text-xs text-slate-300">Sem anexos</div>}
+                                                        ) : <div className="text-xs text-slate-300 w-full">Sem anexos</div>}
+                                                        
                                                         <div className="flex gap-4">
-                                                            <button onClick={() => handleEditDespesa(d)} className="text-amber-600 text-xs font-bold underline">Editar</button>
-                                                            <button onClick={() => removerDespesa(d)} className="text-red-500 text-xs font-bold underline">Excluir</button>
+                                                            <button onClick={() => handleEditDespesa(d)} className="text-amber-600 text-xs font-bold underline whitespace-nowrap">Editar</button>
+                                                            <button onClick={() => removerDespesa(d)} className="text-red-500 text-xs font-bold underline whitespace-nowrap">Excluir</button>
                                                         </div>
                                                     </div>
                                                 </div>
