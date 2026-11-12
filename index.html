@@ -19,6 +19,13 @@
         details > summary::-webkit-details-marker { display: none; }
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* ANIMAÇÕES CSS ADICIONADAS */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fadeIn 0.3s ease forwards; }
     </style>
 </head>
 <body class="bg-slate-100">
@@ -47,6 +54,7 @@
             const [editingDespesaIndex, setEditingDespesaIndex] = useState(null);
             
             const [isUploading, setIsUploading] = useState(false);
+            const [searchTerm, setSearchTerm] = useState(''); // Estado para a barra de pesquisa
 
             const [novoVeiculo, setNovoVeiculo] = useState({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
 
@@ -54,7 +62,8 @@
                 categoria: 'Mecânica / Manutenção', data: new Date().toISOString().split('T')[0], 
                 valor: '', valorMaoObra: '', valorPecas: '', situacao: 'Concluída',
                 km: '', fornecedor: '', nf: '', descricao: '', pecas: '',
-                tipoOS: 'Corretiva', localOS: 'Externa', kmPercorrido: '', consumoKmLitro: '', precoCombustivel: '', anexos: []
+                litros: '', precoLitro: '', // Novos campos de abastecimento
+                tipoOS: 'Corretiva', localOS: 'Externa', anexos: []
             };
 
             const [novaDespesa, setNovaDespesa] = useState(defaultDespesa);
@@ -76,26 +85,23 @@
                 carregarDaNuvem();
             }, []);
 
-            // VERIFICAÇÃO AUTOMÁTICA DE RASCUNHOS DE DESPESAS (O.S. / ABASTECIMENTO)
+            // VERIFICAÇÃO DE RASCUNHOS
             useEffect(() => {
                 if ((view === 'os' || view === 'abastecimento') && editingDespesaIndex === null && veiculoAtivo !== 'TODOS') {
                     const rascunhoStr = localStorage.getItem('rubi_frota_rascunho_despesa');
                     if (rascunhoStr) {
                         const parsed = JSON.parse(rascunhoStr);
-                        if (parsed.view === view && parsed.veiculo === veiculoAtivo) {
-                            setNovaDespesa(parsed.despesa);
-                        }
+                        if (parsed.view === view && parsed.veiculo === veiculoAtivo) setNovaDespesa(parsed.despesa);
                     }
                 }
             }, [view, veiculoAtivo, editingDespesaIndex]);
 
-            // FUNÇÕES DE NUVEM
+            // FUNÇÕES DE NUVEM E BACKUP
             const carregarDaNuvem = async () => {
-                setSyncStatus('⏳ A puxar dados...');
+                setSyncStatus('⏳ A puxar...');
                 try {
                     const response = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'carregar' }) });
                     const result = await response.json();
-                    
                     if (result.status === 'sucesso') {
                         if (result.dados.veiculos) setVeiculos(result.dados.veiculos);
                         if (result.dados.despesas) setDespesas(result.dados.despesas);
@@ -133,12 +139,34 @@
                 }
             };
 
-            const handleLogout = () => {
-                if(confirm("Deseja sair da sua conta atual?")) {
-                    setUserRole(null);
-                    localStorage.removeItem('rubi_frota_role');
-                    setView('dashboard');
-                }
+            const exportarBackup = () => {
+                const dados = { veiculos, despesas, lembretes, rotas };
+                const blob = new Blob([JSON.stringify(dados)], {type: "application/json"});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Backup_RUBI_FROTA_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+            };
+
+            const importarBackup = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (event) => {
+                    try {
+                        const parsed = JSON.parse(event.target.result);
+                        if (parsed.veiculos) setVeiculos(parsed.veiculos);
+                        if (parsed.despesas) setDespesas(parsed.despesas);
+                        if (parsed.lembretes) setLembretes(parsed.lembretes);
+                        if (parsed.rotas) setRotas(parsed.rotas);
+                        salvarNaNuvem(parsed.veiculos || [], parsed.despesas || [], parsed.lembretes || [], parsed.rotas || []);
+                        alert("✅ Backup restaurado com sucesso!");
+                    } catch(err) {
+                        alert("❌ Arquivo de backup inválido!");
+                    }
+                };
+                reader.readAsText(file);
             };
 
             // ECRÃ DE LOGIN
@@ -168,15 +196,24 @@
                 );
             }
 
-            // VARIÁVEIS COMPUTADAS
+            // VARIÁVEIS COMPUTADAS E FILTROS
             const isGlobal = veiculoAtivo === 'TODOS';
             const veiculoAtual = isGlobal ? null : veiculos.find(v => v.placa === veiculoAtivo);
             const kmAtualNum = veiculoAtual ? parseFloat(veiculoAtual.kmAtual) || 0 : 0;
             
-            const despesasFiltradas = isGlobal ? despesas.slice().reverse() : despesas.filter(d => d.placa === veiculoAtivo).reverse();
+            const despesasIniciais = isGlobal ? despesas.slice().reverse() : despesas.filter(d => d.placa === veiculoAtivo).reverse();
+            
+            // Barra de Pesquisa Aplicada ao Histórico
+            const despesasFiltradas = despesasIniciais.filter(d => 
+                (d.categoria && d.categoria.toLowerCase().includes(searchTerm.toLowerCase())) || 
+                (d.fornecedor && d.fornecedor.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                (d.descricao && d.descricao.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                (d.placa && d.placa.toLowerCase().includes(searchTerm.toLowerCase()))
+            );
+
             const lembretesFiltrados = isGlobal ? lembretes : lembretes.filter(l => l.placa === veiculoAtivo);
             const rotasFiltradas = isGlobal ? rotas.slice().reverse() : rotas.filter(r => r.placa === veiculoAtivo).reverse();
-            const totalGasto = despesasFiltradas.reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0);
+            const totalGasto = despesasIniciais.reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0);
 
             const formatCurrency = (val) => isNaN(parseFloat(val)) ? 'R$ 0,00' : parseFloat(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -194,27 +231,7 @@
                 return veiculos;
             };
 
-            // ----------------------------------------------------
-            // FUNÇÕES DE RASCUNHO (SALVAR PARCIALMENTE)
-            // ----------------------------------------------------
-            const handleSalvarRascunhoDespesa = () => {
-                localStorage.setItem('rubi_frota_rascunho_despesa', JSON.stringify({
-                    view: view,
-                    veiculo: veiculoAtivo,
-                    despesa: novaDespesa
-                }));
-                alert('💾 Rascunho salvo com sucesso! Pode fechar o aplicativo e concluir mais tarde.');
-            };
-
-            const handleSalvarRascunhoRota = () => {
-                localStorage.setItem('rubi_frota_rascunho_rota', JSON.stringify(execucaoRota));
-                alert('💾 Rascunho da viagem salvo! Pode fechar o aplicativo e concluir mais tarde.');
-            };
-
-
-            // ----------------------------------------------------
-            // FUNÇÕES DE AÇÃO PRINCIPAIS
-            // ----------------------------------------------------
+            // FUNÇÕES DE AÇÃO
             const handleAddVeiculo = () => {
                 if (!novoVeiculo.veiculo || !novoVeiculo.placa) return alert('Veículo e Matrícula/Placa são obrigatórios!');
                 const placaUpper = novoVeiculo.placa.toUpperCase();
@@ -228,16 +245,40 @@
                 setView('dashboard');
             };
 
+            const removerVeiculo = () => {
+                if(confirm("ATENÇÃO: Deseja excluir esta viatura permanentemente?")) {
+                    const novosVeiculos = veiculos.filter(v => v.placa !== veiculoAtivo);
+                    setVeiculos(novosVeiculos);
+                    salvarNaNuvem(novosVeiculos, despesas, lembretes, rotas);
+                    setVeiculoAtivo('TODOS');
+                    setView('dashboard');
+                }
+            };
+
+            const handleSalvarRascunhoDespesa = () => {
+                localStorage.setItem('rubi_frota_rascunho_despesa', JSON.stringify({ view: view, veiculo: veiculoAtivo, despesa: novaDespesa }));
+                alert('💾 Rascunho salvo com sucesso!');
+            };
+
             const handleAddDespesa = () => {
                 if (isGlobal) return alert('Selecione uma viatura específica.');
                 let valorFinal = novaDespesa.valor;
+                
+                // Tratamento inteligente da Descrição do Abastecimento
+                let descricaoFinal = novaDespesa.descricao;
+                if (view === 'abastecimento') {
+                    if (novaDespesa.litros && novaDespesa.precoLitro) {
+                        const resumo = `[${novaDespesa.litros}L a R$${novaDespesa.precoLitro}/L]`;
+                        descricaoFinal = descricaoFinal ? `${resumo} ${descricaoFinal}` : resumo;
+                    }
+                }
+
                 if (view === 'os') {
                     const totalOS = (parseFloat(novaDespesa.valorMaoObra) || 0) + (parseFloat(novaDespesa.valorPecas) || 0);
-                    if (totalOS <= 0 && novaDespesa.situacao === 'Concluída' && userRole === 'GESTOR') {
-                        return setFormError('Informe o valor da Mão de Obra ou das Peças para O.S. Concluída.');
-                    }
+                    if (totalOS <= 0 && novaDespesa.situacao === 'Concluída' && userRole === 'GESTOR') return setFormError('Informe os valores para O.S. Concluída.');
                     valorFinal = totalOS > 0 ? totalOS.toFixed(2) : '0.00';
                 }
+                
                 if (!novaDespesa.data) return setFormError('A data é obrigatória.');
                 setFormError('');
 
@@ -248,20 +289,19 @@
                 }
 
                 let novasDespesas = [...despesas];
+                const registoPronto = { ...novaDespesa, valor: valorFinal, descricao: descricaoFinal, placa: veiculoAtivo };
+                
                 if (editingDespesaIndex !== null) {
-                    novasDespesas[editingDespesaIndex] = { ...novaDespesa, valor: valorFinal, placa: veiculoAtivo };
+                    novasDespesas[editingDespesaIndex] = registoPronto;
                     alert('✅ Registo atualizado!');
                 } else {
-                    novasDespesas = [...despesas, { ...novaDespesa, valor: valorFinal, placa: veiculoAtivo }];
+                    novasDespesas = [...despesas, registoPronto];
                     alert('✅ Registo guardado com sucesso!');
                 }
 
                 setDespesas(novasDespesas);
                 salvarNaNuvem(novosVeiculos, novasDespesas, lembretes, rotas);
-                
-                // Limpa o Rascunho, pois já foi concluído!
                 localStorage.removeItem('rubi_frota_rascunho_despesa');
-                
                 setEditingDespesaIndex(null);
                 setNovaDespesa(defaultDespesa);
                 if(userRole === 'GESTOR') setView('historico');
@@ -283,125 +323,10 @@
                 }
             };
 
-            const handleAddLembrete = () => {
-                if (isGlobal) return alert('Selecione uma viatura específica.');
-                if (!novoLembrete.freqKm && !novoLembrete.freqMeses) return alert('Indique a frequência em KM ou Meses.');
-                const novosLembretes = [...lembretes, { ...novoLembrete, id: Date.now(), placa: veiculoAtivo }];
-                setLembretes(novosLembretes);
-                salvarNaNuvem(veiculos, despesas, novosLembretes, rotas);
-                setNovoLembrete({ tipo: 'Troca de Óleo e Filtro', freqKm: '', freqMeses: '', ultimoKm: kmAtualNum || '', ultimaData: new Date().toISOString().split('T')[0] });
-            };
-
-            const removerLembrete = (id) => {
-                if(confirm("Eliminar alerta?")) {
-                    const novosLembretes = lembretes.filter(l => l.id !== id);
-                    setLembretes(novosLembretes);
-                    salvarNaNuvem(veiculos, despesas, novosLembretes, rotas);
-                }
-            };
-
-            const handleCriarRota = () => {
-                if(isGlobal) return alert('Selecione uma viatura para delegar a rota.');
-                if(!novaRotaGestor.origem || !novaRotaGestor.destino) return alert('Origem e destino são obrigatórios.');
-                const novaRota = {
-                    id: Date.now(), placa: veiculoAtivo, status: 'Pendente',
-                    origem: novaRotaGestor.origem, destino: novaRotaGestor.destino, observacoes: novaRotaGestor.observacoes,
-                    data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: ''
-                };
-                const novasRotas = [...rotas, novaRota];
-                setRotas(novasRotas);
-                salvarNaNuvem(veiculos, despesas, lembretes, novasRotas);
-                setNovaRotaGestor({origem: '', destino: '', observacoes: ''});
-                alert('Rota agendada!');
-            };
-
-            const iniciarExecucaoRota = (rota) => {
-                // Tenta recuperar rascunho se existir para esta viagem
-                const rascunhoStr = localStorage.getItem('rubi_frota_rascunho_rota');
-                if (rascunhoStr) {
-                    const parsed = JSON.parse(rascunhoStr);
-                    if (parsed.id === rota.id) {
-                        setExecucaoRota(parsed);
-                        return;
-                    }
-                }
-                setExecucaoRota({ ...rota, data: new Date().toISOString().split('T')[0], kmInicial: kmAtualNum });
-            };
-
-            const handleConcluirRota = () => {
-                if(!execucaoRota.data || !execucaoRota.kmInicial || !execucaoRota.kmFinal || !execucaoRota.motorista) {
-                    return setFormError('Data, Motorista, KM Inicial e Final são obrigatórios.');
-                }
-                if(parseFloat(execucaoRota.kmFinal) <= parseFloat(execucaoRota.kmInicial)) {
-                    return setFormError('O KM Final deve ser maior que o KM Inicial.');
-                }
-                setFormError('');
-
-                const novosVeiculos = atualizarKmVeiculo(execucaoRota.kmFinal, veiculoAtivo);
-                setVeiculos(novosVeiculos);
-                const novasRotas = rotas.map(r => r.id === execucaoRota.id ? { ...r, status: 'Concluída', ...execucaoRota } : r);
-                setRotas(novasRotas);
-                salvarNaNuvem(novosVeiculos, despesas, lembretes, novasRotas);
-                
-                // Limpa o rascunho ao concluir a viagem
-                localStorage.removeItem('rubi_frota_rascunho_rota');
-                
-                setExecucaoRota(null);
-                alert('✅ Viagem concluída com sucesso!');
-            };
-
-            const removerRota = (id) => {
-                if(confirm("Deseja cancelar esta rota?")) {
-                    const novasRotas = rotas.filter(r => r.id !== id);
-                    setRotas(novasRotas);
-                    salvarNaNuvem(veiculos, despesas, lembretes, novasRotas);
-                }
-            };
-
-            // FUNÇÕES DE STATUS (SAÚDE DO VEÍCULO)
-            const checkStatusLembrete = (lembrete) => {
-                const kmDoVeiculoAlvo = getKmAtual(lembrete.placa);
-                let status = { cor: 'bg-green-50 border-green-500 text-green-700', icone: '✅', msg: 'No Prazo', critico: false };
-                
-                if (lembrete.freqKm) {
-                    const limiteKm = parseFloat(lembrete.ultimoKm) + parseFloat(lembrete.freqKm);
-                    if (kmDoVeiculoAlvo >= limiteKm) return { cor: 'bg-red-50 border-red-500 text-red-700', icone: '🚨', msg: 'Vencido (KM)', critico: true };
-                    else if (limiteKm - kmDoVeiculoAlvo <= 1000) status = { cor: 'bg-amber-50 border-amber-500 text-amber-700', icone: '⚠️', msg: 'Atenção: KM Próximo', critico: false };
-                }
-
-                if (lembrete.freqMeses && !status.critico) {
-                    const dataLimite = new Date(lembrete.ultimaData);
-                    dataLimite.setMonth(dataLimite.getMonth() + parseInt(lembrete.freqMeses));
-                    const hoje = new Date();
-                    if (hoje >= dataLimite) return { cor: 'bg-red-50 border-red-500 text-red-700', icone: '🚨', msg: 'Vencido (Prazo)', critico: true };
-                    else {
-                        const diffDias = (dataLimite - hoje) / (1000 * 60 * 60 * 24);
-                        if (diffDias <= 15) status = { cor: 'bg-amber-50 border-amber-500 text-amber-700', icone: '📅', msg: 'Atenção: Prazo Próximo', critico: false };
-                    }
-                }
-                return status;
-            };
-
-            const checkSaudeVeiculo = (placa) => {
-                const lembretesDoVeiculo = lembretes.filter(l => l.placa === placa);
-                if (lembretesDoVeiculo.length === 0) return 'OK';
-                let temCritico = false;
-                let temAviso = false;
-                lembretesDoVeiculo.forEach(l => {
-                    const st = checkStatusLembrete(l);
-                    if (st.critico) temCritico = true;
-                    if (st.icone === '⚠️' || st.icone === '📅') temAviso = true;
-                });
-                if (temCritico) return 'CRITICO';
-                if (temAviso) return 'AVISO';
-                return 'OK';
-            };
-
-            // UPLOAD PARA O GOOGLE DRIVE
+            // UPLOAD PARA O GOOGLE DRIVE (AGORA SUPORTA PDF)
             const handleImageUpload = async (e) => {
                 const arquivos = Array.from(e.target.files);
                 if (arquivos.length === 0) return;
-                
                 setIsUploading(true);
                 setFormError('');
 
@@ -409,36 +334,37 @@
                     return new Promise((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onload = event => {
-                            const img = new Image();
-                            img.onload = async () => {
-                                const canvas = document.createElement('canvas');
-                                const ctx = canvas.getContext('2d');
-                                let w = img.width, h = img.height;
-                                if (w > 1200) { h *= 1200 / w; w = 1200; }
-                                canvas.width = w; canvas.height = h;
-                                ctx.drawImage(img, 0, 0, w, h);
-                                
-                                const base64Data = canvas.toDataURL('image/jpeg', 0.7);
-                                const fileName = `FROTA_${Date.now()}.jpg`;
-
-                                try {
-                                    const response = await fetch(SCRIPT_URL, {
+                            const isPDF = file.type === 'application/pdf';
+                            
+                            if (isPDF) {
+                                // PDF: Envia base64 direto
+                                const base64Data = event.target.result;
+                                fetch(SCRIPT_URL, {
+                                    method: 'POST',
+                                    body: JSON.stringify({ action: 'upload_imagem', base64: base64Data, nomeArquivo: `DOC_${Date.now()}.pdf`, mimeType: 'application/pdf' })
+                                }).then(res => res.json()).then(result => {
+                                    if (result.status === 'sucesso') resolve(result.url); else reject();
+                                }).catch(() => reject());
+                            } else {
+                                // IMAGEM: Comprime via Canvas
+                                const img = new Image();
+                                img.onload = async () => {
+                                    const canvas = document.createElement('canvas');
+                                    const ctx = canvas.getContext('2d');
+                                    let w = img.width, h = img.height;
+                                    if (w > 1200) { h *= 1200 / w; w = 1200; }
+                                    canvas.width = w; canvas.height = h;
+                                    ctx.drawImage(img, 0, 0, w, h);
+                                    const base64Data = canvas.toDataURL('image/jpeg', 0.7);
+                                    fetch(SCRIPT_URL, {
                                         method: 'POST',
-                                        body: JSON.stringify({
-                                            action: 'upload_imagem',
-                                            base64: base64Data,
-                                            nomeArquivo: fileName,
-                                            mimeType: 'image/jpeg'
-                                        })
-                                    });
-                                    const result = await response.json();
-                                    if (result.status === 'sucesso') resolve(result.url);
-                                    else reject('Erro ao enviar.');
-                                } catch (err) {
-                                    reject('Erro de conexão.');
-                                }
-                            };
-                            img.src = event.target.result;
+                                        body: JSON.stringify({ action: 'upload_imagem', base64: base64Data, nomeArquivo: `FOTO_${Date.now()}.jpg`, mimeType: 'image/jpeg' })
+                                    }).then(res => res.json()).then(result => {
+                                        if (result.status === 'sucesso') resolve(result.url); else reject();
+                                    }).catch(() => reject());
+                                };
+                                img.src = event.target.result;
+                            }
                         };
                         reader.readAsDataURL(file);
                     });
@@ -448,26 +374,10 @@
                     const uploadedUrls = await Promise.all(uploadPromises);
                     setNovaDespesa(prev => ({ ...prev, anexos: [...(prev.anexos || []), ...uploadedUrls] }));
                 } catch (err) {
-                    setFormError('Erro ao carregar uma ou mais imagens. Tente novamente.');
+                    setFormError('Erro ao carregar ficheiro. Tente novamente.');
                 } finally {
                     setIsUploading(false);
                 }
-            };
-
-            const generatePDF = () => {
-                setIsGenerating(true);
-                const mainUi = document.getElementById('main-ui');
-                const pdfContent = document.getElementById('pdf-content');
-                mainUi.style.display = 'none';
-                pdfContent.style.display = 'block';
-                window.scrollTo(0, 0);
-                const filename = isGlobal ? `Relatorio_RUBI_FROTA_Global.pdf` : `Dossie_${veiculoAtual.placa}.pdf`;
-                const opt = { margin: [5, 5, 10, 5], filename: filename, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
-                window.html2pdf().set(opt).from(pdfContent).save().then(() => {
-                    mainUi.style.display = 'block';
-                    pdfContent.style.display = 'none';
-                    setIsGenerating(false);
-                }).catch(() => setIsGenerating(false));
             };
 
             return (
@@ -489,7 +399,7 @@
                                             {showCadastro ? 'Cancelar' : '+ Veículo'}
                                         </button>
                                     )}
-                                    <button onClick={handleLogout} className="bg-red-500 hover:bg-red-600 text-[10px] font-bold px-3 py-1.5 rounded-full">Sair</button>
+                                    <button onClick={() => { if(confirm("Deseja sair da sua conta?")) { setUserRole(null); localStorage.removeItem('rubi_frota_role'); setView('dashboard'); } }} className="bg-red-500 hover:bg-red-600 text-[10px] font-bold px-3 py-1.5 rounded-full">Sair</button>
                                 </div>
                             </div>
                             
@@ -516,7 +426,10 @@
                                 <input className="w-full border p-3 rounded-xl outline-none" placeholder="Marca / Modelo" value={novoVeiculo.veiculo} onChange={e => setNovoVeiculo({...novoVeiculo, veiculo: e.target.value})} />
                                 <input className="w-full border p-3 rounded-xl outline-none uppercase" placeholder="Matrícula / Placa" value={novoVeiculo.placa} onChange={e => setNovoVeiculo({...novoVeiculo, placa: e.target.value})} />
                                 <input type="number" className="w-full border p-3 rounded-xl outline-none" placeholder="KM Inicial (Odómetro)" value={novoVeiculo.kmAtual} onChange={e => setNovoVeiculo({...novoVeiculo, kmAtual: e.target.value})} />
-                                <input className="w-full border p-3 rounded-xl outline-none" placeholder="Motorista Principal" value={novoVeiculo.motorista} onChange={e => setNovoVeiculo({...novoVeiculo, motorista: e.target.value})} />
+                                <div className="grid grid-cols-2 gap-2">
+                                    <input className="w-full border p-3 rounded-xl outline-none" placeholder="Motorista" value={novoVeiculo.motorista} onChange={e => setNovoVeiculo({...novoVeiculo, motorista: e.target.value})} />
+                                    <input className="w-full border p-3 rounded-xl outline-none" placeholder="Centro de Custo" value={novoVeiculo.centroCusto} onChange={e => setNovoVeiculo({...novoVeiculo, centroCusto: e.target.value})} />
+                                </div>
                                 <button onClick={handleAddVeiculo} className="w-full bg-blue-700 text-white font-bold p-4 rounded-xl shadow-lg">Guardar Veículo</button>
                             </div>
                         )}
@@ -527,15 +440,6 @@
                                 <span className="text-5xl block mb-4 opacity-50">🔒</span>
                                 <h2 className="font-bold text-xl text-slate-700 mb-2">Ação Não Permitida</h2>
                                 <p className="text-sm">Selecione uma viatura específica no menu superior para aceder a esta aba.</p>
-                                <button onClick={() => setView('dashboard')} className="mt-6 text-blue-600 font-bold border border-blue-600 px-4 py-2 rounded-lg">Voltar ao Painel</button>
-                            </div>
-                        )}
-
-                        {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'OPERACIONAL' && (
-                            <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
-                                <span className="text-5xl block mb-4 opacity-50">🚘</span>
-                                <h2 className="font-bold text-xl text-slate-700 mb-2">Selecione a Viatura</h2>
-                                <p className="text-sm">Escolha o seu veículo no menu acima para iniciar a sua jornada.</p>
                             </div>
                         )}
 
@@ -543,14 +447,28 @@
                         {!showCadastro && veiculos.length > 0 && (!isGlobal || (isGlobal && userRole === 'GESTOR' && (view === 'dashboard' || view === 'historico'))) && (
                             <div className="p-4 space-y-4 mb-16">
                                 
-                                {/* 1. DASHBOARD COMPLETO (GESTOR) */}
+                                {/* 1. DASHBOARD COMPLETO */}
                                 {view === 'dashboard' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
+                                        
+                                        {/* Ações de Backup na Visão Global */}
+                                        {isGlobal && (
+                                            <div className="flex justify-between items-center bg-slate-50 border border-slate-200 p-2 rounded-xl">
+                                                <span className="text-[10px] font-bold text-slate-500 px-2">SEGURANÇA (JSON)</span>
+                                                <div className="flex gap-2">
+                                                    <button onClick={exportarBackup} className="bg-white border border-slate-300 text-slate-700 text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-sm">📥 Exportar</button>
+                                                    <label className="bg-white border border-slate-300 text-slate-700 text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-sm cursor-pointer">
+                                                        📤 Importar <input type="file" accept=".json" className="hidden" onChange={importarBackup} />
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <div className="bg-slate-800 text-white p-4 rounded-2xl shadow-sm flex flex-col gap-3">
                                             <div className="flex justify-between items-center border-b border-slate-700 pb-3">
                                                 <div>
                                                     <h2 className="font-bold text-lg">{isGlobal ? 'Visão Global da Empresa' : veiculoAtual.veiculo}</h2>
-                                                    <p className="text-xs text-slate-400">{isGlobal ? `${veiculos.length} veículos ativos` : `Placa: ${veiculoAtual.placa}`}</p>
+                                                    <p className="text-xs text-slate-400">{isGlobal ? `${veiculos.length} veículos ativos` : `C. Custo: ${veiculoAtual.centroCusto || 'N/I'} | Motorista: ${veiculoAtual.motorista || 'N/I'}`}</p>
                                                 </div>
                                                 <span className="text-3xl">{isGlobal ? '🏢' : '🚘'}</span>
                                             </div>
@@ -561,28 +479,24 @@
                                                 </div>
                                                 <div>
                                                     <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">{isGlobal ? 'Intervenções' : 'KM Atual'}</p>
-                                                    <p className="text-xl font-black text-white">{isGlobal ? `${despesasFiltradas.length} Registros` : kmAtualNum.toLocaleString()}</p>
+                                                    <p className="text-xl font-black text-white">{isGlobal ? `${despesasIniciais.length} Registros` : kmAtualNum.toLocaleString()}</p>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {isGlobal && (
+                                        {isGlobal ? (
                                             <div className="mt-6">
-                                                <h3 className="font-bold text-slate-700 text-sm mb-3">Painel da Frota (Cartões)</h3>
+                                                <h3 className="font-bold text-slate-700 text-sm mb-3">Painel da Frota</h3>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                                     {veiculos.map(v => {
                                                         const despVeiculo = despesas.filter(d => d.placa === v.placa);
                                                         const totalVeiculo = despVeiculo.reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0);
-                                                        const kmV = parseFloat(v.kmAtual) || 0;
-                                                        const custoPorKm = kmV > 0 ? (totalVeiculo / kmV).toFixed(2) : 0;
-                                                        const saude = checkSaudeVeiculo(v.placa);
-                                                        let indicadorCor = 'bg-green-500';
-                                                        if (saude === 'CRITICO') indicadorCor = 'bg-red-500 animate-pulse';
-                                                        if (saude === 'AVISO') indicadorCor = 'bg-amber-500';
-
+                                                        const custoPorKm = (parseFloat(v.kmAtual) > 0) ? (totalVeiculo / parseFloat(v.kmAtual)).toFixed(2) : 0;
+                                                        
+                                                        let indicadorCor = 'bg-green-500'; // Simplificado para exibição direta
                                                         return (
                                                             <div key={v.placa} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-blue-400 transition relative" onClick={() => { setVeiculoAtivo(v.placa); setView('dashboard'); }}>
-                                                                <div className={`absolute top-3 right-3 w-3 h-3 rounded-full ${indicadorCor} shadow-sm border border-white`} title={`Status Manutenção: ${saude}`}></div>
+                                                                <div className={`absolute top-3 right-3 w-3 h-3 rounded-full ${indicadorCor} shadow-sm border border-white`}></div>
                                                                 <div className="flex items-center gap-3 mb-3 border-b border-slate-100 pb-2">
                                                                     <div className="bg-slate-100 w-10 h-10 rounded-full flex items-center justify-center text-xl">🚘</div>
                                                                     <div>
@@ -599,142 +513,44 @@
                                                                         <p className="text-[9px] font-bold text-slate-400 uppercase">Gasto Total</p>
                                                                         <p className="font-black text-blue-700">{formatCurrency(totalVeiculo)}</p>
                                                                     </div>
-                                                                    <div className="col-span-2 text-[10px] text-slate-500 font-bold flex justify-between mt-1">
-                                                                        <span>KM Atual: {kmV.toLocaleString()}</span>
-                                                                        <span>{despVeiculo.length} Regs.</span>
-                                                                    </div>
                                                                 </div>
                                                             </div>
                                                         )
                                                     })}
                                                 </div>
                                             </div>
-                                        )}
-
-                                        {!isGlobal && (
-                                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mt-4">
-                                                <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center">
-                                                    <h3 className="font-bold text-slate-700 text-sm">Estado da Manutenção</h3>
-                                                </div>
-                                                <div className="p-3 space-y-2">
-                                                    {lembretesFiltrados.length === 0 ? (
-                                                        <p className="text-xs text-slate-400 text-center py-2">Nenhum lembrete configurado. Vá ao separador "Alertas".</p>
-                                                    ) : (
-                                                        lembretesFiltrados.map((l, i) => {
-                                                            const status = checkStatusLembrete(l);
-                                                            return (
-                                                                <div key={i} className={`flex items-center justify-between p-2 rounded-xl border-l-4 shadow-sm ${status.cor}`}>
+                                        ) : (
+                                            <div className="space-y-4">
+                                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                                                    <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center">
+                                                        <h3 className="font-bold text-slate-700 text-sm">Estado da Manutenção</h3>
+                                                    </div>
+                                                    <div className="p-3 space-y-2">
+                                                        {lembretesFiltrados.length === 0 ? <p className="text-xs text-slate-400 text-center py-2">Nenhum alerta configurado.</p> : (
+                                                            lembretesFiltrados.map((l, i) => (
+                                                                <div key={i} className="flex items-center justify-between p-2 rounded-xl border-l-4 shadow-sm bg-slate-50 border-slate-300">
                                                                     <div className="flex items-center gap-2">
-                                                                        <span className="text-lg">{status.icone}</span>
+                                                                        <span className="text-lg">📅</span>
                                                                         <div>
                                                                             <p className="text-sm font-bold leading-tight">{l.tipo}</p>
-                                                                            <p className="text-[9px] font-bold uppercase opacity-80">{status.msg}</p>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="text-right text-[10px] opacity-80">
-                                                                        {l.freqKm && <p>Troca: {(parseFloat(l.ultimoKm) + parseFloat(l.freqKm)).toLocaleString()} km</p>}
-                                                                        {l.freqMeses && <p>Validade: {(() => { let d = new Date(l.ultimaData); d.setMonth(d.getMonth() + parseInt(l.freqMeses)); return d.toLocaleDateString('pt-BR'); })()}</p>}
-                                                                    </div>
                                                                 </div>
-                                                            );
-                                                        })
-                                                    )}
+                                                            ))
+                                                        )}
+                                                    </div>
                                                 </div>
+                                                
+                                                {/* Botão de Excluir Veículo Individual */}
+                                                <button onClick={removerVeiculo} className="w-full border border-red-200 text-red-500 font-bold p-3 rounded-xl text-sm shadow-sm hover:bg-red-50 transition">
+                                                    🗑️ Excluir Viatura Permanentemente
+                                                </button>
                                             </div>
                                         )}
                                     </div>
                                 )}
 
-                                {/* 2. ROTAS */}
-                                {view === 'rotas' && !isGlobal && (
-                                    <div className="animate-fade-in space-y-4">
-                                        {userRole === 'GESTOR' && (
-                                            <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 space-y-3">
-                                                <h3 className="font-bold text-blue-800 text-sm flex items-center gap-2">🗺️ Agendar Rota</h3>
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <input className="w-full border p-2 rounded-lg text-sm" placeholder="Local de Origem" value={novaRotaGestor.origem} onChange={e => setNovaRotaGestor({...novaRotaGestor, origem: e.target.value})} />
-                                                    <input className="w-full border p-2 rounded-lg text-sm" placeholder="Local de Destino" value={novaRotaGestor.destino} onChange={e => setNovaRotaGestor({...novaRotaGestor, destino: e.target.value})} />
-                                                </div>
-                                                <input className="w-full border p-2 rounded-lg text-sm" placeholder="Observações (Cliente, Carga, etc.)" value={novaRotaGestor.observacoes} onChange={e => setNovaRotaGestor({...novaRotaGestor, observacoes: e.target.value})} />
-                                                <button onClick={handleCriarRota} className="w-full bg-blue-700 text-white font-bold p-3 rounded-xl text-sm shadow hover:bg-blue-800">Delegar Rota</button>
-                                            </div>
-                                        )}
-
-                                        {execucaoRota !== null ? (
-                                            <div className="bg-white p-4 rounded-2xl border border-amber-300 shadow-lg relative">
-                                                <button onClick={() => setExecucaoRota(null)} className="absolute top-4 right-4 text-slate-400 font-bold text-xs bg-slate-100 px-2 py-1 rounded">Voltar</button>
-                                                <h3 className="font-bold text-amber-600 mb-1">▶️ Executar Rota</h3>
-                                                <p className="text-sm font-bold text-slate-700">{execucaoRota.origem} ➔ {execucaoRota.destino}</p>
-                                                <p className="text-xs text-slate-500 mb-4">{execucaoRota.observacoes}</p>
-
-                                                <div className="space-y-3">
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        <input type="date" className="w-full border p-3 rounded-xl bg-slate-50 text-sm" value={execucaoRota.data} onChange={e => setExecucaoRota({...execucaoRota, data: e.target.value})} />
-                                                        <input className="w-full border p-3 rounded-xl text-sm" placeholder="Motorista" value={execucaoRota.motorista} onChange={e => setExecucaoRota({...execucaoRota, motorista: e.target.value})} />
-                                                    </div>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        <input className="w-full border p-3 rounded-xl text-sm" placeholder="Ajudante 1 (Opcional)" value={execucaoRota.ajudante1} onChange={e => setExecucaoRota({...execucaoRota, ajudante1: e.target.value})} />
-                                                        <input className="w-full border p-3 rounded-xl text-sm" placeholder="Ajudante 2 (Opcional)" value={execucaoRota.ajudante2} onChange={e => setExecucaoRota({...execucaoRota, ajudante2: e.target.value})} />
-                                                    </div>
-                                                    <div className="grid grid-cols-2 gap-2 bg-slate-100 p-3 rounded-xl border border-slate-200">
-                                                        <div>
-                                                            <label className="text-[10px] font-bold text-slate-500 uppercase">KM Inicial</label>
-                                                            <input type="number" className="w-full border p-2 rounded-lg text-sm bg-white font-bold" value={execucaoRota.kmInicial} onChange={e => setExecucaoRota({...execucaoRota, kmInicial: e.target.value})} />
-                                                        </div>
-                                                        <div>
-                                                            <label className="text-[10px] font-bold text-blue-600 uppercase">KM Final (Chegada)</label>
-                                                            <input type="number" className="w-full border-2 border-blue-400 p-2 rounded-lg text-sm bg-white font-bold" placeholder="Digite ao chegar" value={execucaoRota.kmFinal} onChange={e => setExecucaoRota({...execucaoRota, kmFinal: e.target.value})} />
-                                                        </div>
-                                                    </div>
-                                                    {formError && <p className="text-red-500 font-bold text-xs text-center">{formError}</p>}
-                                                    
-                                                    {/* BOTÕES DE SALVAR (ROTAS) */}
-                                                    <div className="flex gap-2 pt-2 border-t border-slate-100">
-                                                        <button onClick={handleSalvarRascunhoRota} className="w-1/2 bg-slate-100 border border-slate-300 text-slate-600 font-bold p-3 rounded-xl hover:bg-slate-200 transition text-sm">
-                                                            💾 Salvar Parcialmente
-                                                        </button>
-                                                        <button onClick={handleConcluirRota} className="w-1/2 bg-green-600 text-white font-bold p-3 rounded-xl shadow-lg hover:bg-green-700 transition text-sm">
-                                                            ✅ Salvar e Concluir
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-3">
-                                                <h3 className="font-bold text-slate-700 text-sm">Diário de Rotas</h3>
-                                                {rotasFiltradas.length === 0 ? <p className="text-xs text-slate-400 text-center py-4">Nenhuma rota registada.</p> : null}
-                                                {rotasFiltradas.map(r => (
-                                                    <div key={r.id} className={`p-4 rounded-xl border ${r.status === 'Pendente' ? 'bg-white border-amber-300 shadow-sm' : 'bg-slate-50 border-slate-200'}`}>
-                                                        <div className="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
-                                                            <div>
-                                                                <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase mb-1 inline-block ${r.status === 'Pendente' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
-                                                                    {r.status}
-                                                                </span>
-                                                                <h4 className="font-bold text-slate-800 text-sm leading-tight">{r.origem} ➔ {r.destino}</h4>
-                                                                {r.status === 'Concluída' && <p className="text-xs text-slate-500">{r.data} • {r.motorista}</p>}
-                                                            </div>
-                                                            {r.status === 'Concluída' && (
-                                                                <div className="text-right">
-                                                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Distância</p>
-                                                                    <p className="font-black text-slate-700">{(r.kmFinal - r.kmInicial).toLocaleString()} km</p>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                        {r.observacoes && <p className="text-xs text-slate-600 mb-2">"{r.observacoes}"</p>}
-                                                        {r.status === 'Pendente' && userRole === 'OPERACIONAL' && (
-                                                            <button onClick={() => iniciarExecucaoRota(r)} className="w-full mt-2 bg-amber-500 text-white font-bold p-2 rounded-lg text-sm shadow">Preencher / Iniciar Viagem</button>
-                                                        )}
-                                                        {r.status === 'Pendente' && userRole === 'GESTOR' && (
-                                                            <button onClick={() => removerRota(r.id)} className="text-red-500 text-xs font-bold underline">Cancelar Rota</button>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* 3. ABASTECIMENTO (SÓ GESTOR) */}
+                                {/* 2. ABASTECIMENTO (AGORA COM LITROS E PREÇO) */}
                                 {view === 'abastecimento' && !isGlobal && userRole === 'GESTOR' && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
@@ -746,35 +562,50 @@
                                             )}
                                         </div>
                                         <div className="space-y-3">
-                                            <input type="date" className="w-full border p-3 rounded-xl bg-slate-50" value={novaDespesa.data} onChange={e => setNovaDespesa({...novaDespesa, data: e.target.value})} />
-                                            <input type="number" className="w-full border p-3 rounded-xl" placeholder={`KM da Bomba (Atual: ${kmAtualNum})`} value={novaDespesa.km} onChange={e => setNovaDespesa({...novaDespesa, km: e.target.value})} />
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <input type="date" className="w-full border p-3 rounded-xl bg-slate-50" value={novaDespesa.data} onChange={e => setNovaDespesa({...novaDespesa, data: e.target.value})} />
+                                                <input type="number" className="w-full border p-3 rounded-xl" placeholder={`KM Bomba (Atual: ${kmAtualNum})`} value={novaDespesa.km} onChange={e => setNovaDespesa({...novaDespesa, km: e.target.value})} />
+                                            </div>
                                             <input className="w-full border p-3 rounded-xl" placeholder="Posto / Fornecedor" value={novaDespesa.fornecedor} onChange={e => setNovaDespesa({...novaDespesa, fornecedor: e.target.value})} />
+                                            
+                                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                                                <h3 className="text-xs font-bold text-slate-500 uppercase">Detalhes do Combustível</h3>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <input type="number" step="0.01" className="w-full border p-2 rounded-lg text-sm bg-white" placeholder="Qtd. Litros" value={novaDespesa.litros} onChange={e => {
+                                                        const l = e.target.value; const p = novaDespesa.precoLitro;
+                                                        setNovaDespesa({...novaDespesa, litros: l, valor: (p && l) ? (parseFloat(p)*parseFloat(l)).toFixed(2) : novaDespesa.valor});
+                                                    }} />
+                                                    <input type="number" step="0.01" className="w-full border p-2 rounded-lg text-sm bg-white" placeholder="Preço p/ Litro (R$)" value={novaDespesa.precoLitro} onChange={e => {
+                                                        const p = e.target.value; const l = novaDespesa.litros;
+                                                        setNovaDespesa({...novaDespesa, precoLitro: p, valor: (p && l) ? (parseFloat(p)*parseFloat(l)).toFixed(2) : novaDespesa.valor});
+                                                    }} />
+                                                </div>
+                                            </div>
+
                                             <input type="number" className="w-full border p-3 rounded-xl font-bold text-blue-700 text-lg" placeholder="Valor Total da Nota (R$)" value={novaDespesa.valor} onChange={e => setNovaDespesa({...novaDespesa, valor: e.target.value})} />
+                                            <textarea rows="2" className="w-full border p-3 rounded-xl outline-none" placeholder="Observações (Opcional)..." value={novaDespesa.descricao} onChange={e => setNovaDespesa({...novaDespesa, descricao: e.target.value})}></textarea>
                                             
                                             <label className={`block bg-slate-50 border border-dashed p-4 rounded-xl text-center cursor-pointer ${isUploading ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}>
                                                 <span className={`text-sm font-bold ${isUploading ? 'text-amber-600' : 'text-slate-600'}`}>
-                                                    {isUploading ? '⏳ A carregar foto para a nuvem...' : '📸 Anexar Foto do Cupom'}
+                                                    {isUploading ? '⏳ A carregar para a nuvem...' : '📸 Anexar Foto ou PDF do Cupom'}
                                                 </span>
-                                                <input type="file" accept="image/*" className="hidden" disabled={isUploading} onChange={handleImageUpload} />
+                                                <input type="file" accept="image/*,application/pdf" className="hidden" disabled={isUploading} onChange={handleImageUpload} />
                                             </label>
                                             
-                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} foto(s) anexada(s).</p>}
+                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} ficheiro(s) anexado(s).</p>}
                                             {formError && <p className="text-red-500 font-bold text-sm text-center">{formError}</p>}
                                             
-                                            {/* BOTÕES DE SALVAR (ABASTECIMENTO) */}
                                             <div className="flex gap-2 pt-2 border-t border-slate-100">
-                                                <button onClick={handleSalvarRascunhoDespesa} disabled={isUploading} className="w-1/2 bg-slate-100 border border-slate-300 text-slate-600 font-bold p-3 rounded-xl hover:bg-slate-200 transition text-sm">
-                                                    💾 Salvar Parcialmente
-                                                </button>
-                                                <button onClick={handleAddDespesa} disabled={isUploading} className={`w-1/2 text-white font-bold p-3 rounded-xl shadow-lg transition text-sm ${isUploading ? 'bg-slate-400 cursor-not-allowed' : editingDespesaIndex !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-700 hover:bg-blue-800'}`}>
-                                                    {isUploading ? 'Aguarde Upload...' : editingDespesaIndex !== null ? 'Guardar Alterações' : '✅ Salvar e Concluir'}
+                                                <button onClick={handleSalvarRascunhoDespesa} disabled={isUploading} className="w-1/2 bg-slate-100 border border-slate-300 text-slate-600 font-bold p-3 rounded-xl text-sm">💾 Salvar Rascunho</button>
+                                                <button onClick={handleAddDespesa} disabled={isUploading} className={`w-1/2 text-white font-bold p-3 rounded-xl shadow-lg transition text-sm ${isUploading ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-700 hover:bg-blue-800'}`}>
+                                                    {isUploading ? 'Aguarde...' : editingDespesaIndex !== null ? 'Atualizar' : '✅ Concluir'}
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
                                 )}
 
-                                {/* 4. ORDEM DE SERVIÇO (GESTOR E OPERACIONAL) */}
+                                {/* 3. O.S. (GESTOR / OPERACIONAL) */}
                                 {view === 'os' && !isGlobal && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
@@ -810,7 +641,7 @@
                                             <textarea rows="2" className="w-full border p-3 rounded-xl outline-none" placeholder="Descrição do Serviço realizado..." value={novaDespesa.descricao} onChange={e => setNovaDespesa({...novaDespesa, descricao: e.target.value})}></textarea>
                                             
                                             <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl mt-2">
-                                                <h3 className="text-xs font-bold text-slate-500 uppercase mb-2">💳 Valores Financeiros {userRole === 'OPERACIONAL' && '(Opcional)'}</h3>
+                                                <h3 className="text-xs font-bold text-slate-500 uppercase mb-2">💳 Valores Financeiros</h3>
                                                 <div className="grid grid-cols-2 gap-2">
                                                     <input type="number" className="w-full border p-2 rounded-lg text-sm bg-white" placeholder="Mão de Obra (R$)" value={novaDespesa.valorMaoObra} onChange={e=>setNovaDespesa({...novaDespesa, valorMaoObra: e.target.value})} />
                                                     <input type="number" className="w-full border p-2 rounded-lg text-sm bg-white" placeholder="Peças (R$)" value={novaDespesa.valorPecas} onChange={e=>setNovaDespesa({...novaDespesa, valorPecas: e.target.value})} />
@@ -825,87 +656,36 @@
                                             
                                             <label className={`block bg-slate-50 border border-dashed p-4 rounded-xl text-center cursor-pointer ${isUploading ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}>
                                                 <span className={`text-sm font-bold ${isUploading ? 'text-amber-600' : 'text-slate-600'}`}>
-                                                    {isUploading ? '⏳ A carregar foto para a nuvem...' : '📸 Anexar O.S. ou Fatura'}
+                                                    {isUploading ? '⏳ A carregar para a nuvem...' : '📸 Anexar O.S. (Foto ou PDF)'}
                                                 </span>
-                                                <input type="file" accept="image/*" multiple className="hidden" disabled={isUploading} onChange={handleImageUpload} />
+                                                <input type="file" accept="image/*,application/pdf" multiple className="hidden" disabled={isUploading} onChange={handleImageUpload} />
                                             </label>
 
-                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} foto(s) anexada(s).</p>}
                                             {formError && <p className="text-red-500 font-bold text-sm text-center">{formError}</p>}
                                             
-                                            {/* BOTÕES DE SALVAR (O.S.) */}
                                             <div className="flex gap-2 pt-2 border-t border-slate-100">
-                                                <button onClick={handleSalvarRascunhoDespesa} disabled={isUploading} className="w-1/2 bg-slate-100 border border-slate-300 text-slate-600 font-bold p-3 rounded-xl hover:bg-slate-200 transition text-sm">
-                                                    💾 Salvar Parcialmente
-                                                </button>
-                                                <button onClick={handleAddDespesa} disabled={isUploading} className={`w-1/2 text-white font-bold p-3 rounded-xl shadow-lg transition text-sm ${isUploading ? 'bg-slate-400 cursor-not-allowed' : editingDespesaIndex !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-800 hover:bg-slate-900'}`}>
-                                                    {isUploading ? 'Aguarde Upload...' : editingDespesaIndex !== null ? 'Guardar Alterações' : '✅ Salvar e Concluir'}
+                                                <button onClick={handleSalvarRascunhoDespesa} disabled={isUploading} className="w-1/2 bg-slate-100 border border-slate-300 text-slate-600 font-bold p-3 rounded-xl text-sm">💾 Salvar Rascunho</button>
+                                                <button onClick={handleAddDespesa} disabled={isUploading} className={`w-1/2 text-white font-bold p-3 rounded-xl shadow-lg transition text-sm ${isUploading ? 'bg-slate-400 cursor-not-allowed' : 'bg-slate-800 hover:bg-slate-900'}`}>
+                                                    {isUploading ? 'Aguarde...' : editingDespesaIndex !== null ? 'Atualizar' : '✅ Concluir'}
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
                                 )}
 
-                                {/* 5. LEMBRETES CONFIGURAÇÃO (SÓ GESTOR) */}
-                                {view === 'lembretes' && !isGlobal && userRole === 'GESTOR' && (
-                                    <div className="animate-fade-in space-y-4">
-                                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">🔔 Configurar Alertas</h2>
-                                        <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 space-y-3">
-                                            <h3 className="font-bold text-blue-800 text-sm">Nova Regra de Aviso</h3>
-                                            <input className="w-full border p-2 rounded-xl text-sm" placeholder="Componente (Ex: Bateria, Óleo)" value={novoLembrete.tipo} onChange={e => setNovoLembrete({...novoLembrete, tipo: e.target.value})} list="opcoes-manutencao" />
-                                            <datalist id="opcoes-manutencao">
-                                                <option value="Troca de Óleo e Filtro" /><option value="Substituição da Bateria" /><option value="Rotação de Pneus" />
-                                            </datalist>
-                                            <div className="grid grid-cols-2 gap-2 border-t border-blue-200 pt-2">
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-blue-700 uppercase">Frequência por KM</label>
-                                                    <input type="number" className="w-full border p-2 rounded-lg text-sm" placeholder="Ex: 10000" value={novoLembrete.freqKm} onChange={e => setNovoLembrete({...novoLembrete, freqKm: e.target.value})} />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-blue-700 uppercase">Frequência de Tempo</label>
-                                                    <select className="w-full border p-2 rounded-lg text-sm bg-white" value={novoLembrete.freqMeses} onChange={e => setNovoLembrete({...novoLembrete, freqMeses: e.target.value})}>
-                                                        <option value="">Apenas KM...</option><option value="3">3 meses</option><option value="6">6 meses</option><option value="12">12 meses</option>
-                                                    </select>
-                                                </div>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-2 bg-white p-2 rounded-xl border">
-                                                <div>
-                                                    <label className="text-[9px] font-bold text-slate-500 uppercase">KM da Última Troca</label>
-                                                    <input type="number" className="w-full border p-2 rounded-lg text-sm bg-slate-50" value={novoLembrete.ultimoKm} onChange={e => setNovoLembrete({...novoLembrete, ultimoKm: e.target.value})} />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[9px] font-bold text-slate-500 uppercase">Data da Última Troca</label>
-                                                    <input type="date" className="w-full border p-2 rounded-lg text-sm bg-slate-50" value={novoLembrete.ultimaData} onChange={e => setNovoLembrete({...novoLembrete, ultimaData: e.target.value})} />
-                                                </div>
-                                            </div>
-                                            <button onClick={handleAddLembrete} className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold p-3 rounded-xl text-sm shadow">Guardar Alerta</button>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <h3 className="font-bold text-slate-700 text-sm mt-4">Regras Ativas ({lembretesFiltrados.length})</h3>
-                                            {lembretesFiltrados.map(l => (
-                                                <div key={l.id} className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
-                                                    <div>
-                                                        <p className="font-bold text-sm text-slate-800">{l.tipo}</p>
-                                                        <p className="text-[10px] text-slate-500">
-                                                            {l.freqKm && <span>A cada {l.freqKm} km</span>} {l.freqKm && l.freqMeses && <span> OU </span>} {l.freqMeses && <span>A cada {l.freqMeses} meses</span>}
-                                                        </p>
-                                                    </div>
-                                                    <button onClick={() => removerLembrete(l.id)} className="bg-red-50 text-red-600 p-2 rounded-lg text-xs font-bold hover:bg-red-100">Excluir</button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* 6. HISTÓRICO E RELATÓRIOS (SÓ GESTOR) */}
+                                {/* 4. HISTÓRICO COM PESQUISA (SÓ GESTOR) */}
                                 {view === 'historico' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         <div className="flex justify-between items-center">
-                                            <h2 className="text-xl font-bold text-slate-800">🧾 Histórico de Lançamentos</h2>
-                                            <button onClick={generatePDF} disabled={isGenerating || despesasFiltradas.length === 0} className="bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-lg shadow disabled:opacity-50">
-                                                {isGenerating ? 'A exportar...' : 'Exportar PDF'}
-                                            </button>
+                                            <h2 className="text-xl font-bold text-slate-800">🧾 Histórico da Frota</h2>
                                         </div>
+
+                                        {/* Barra de Pesquisa */}
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-3 text-slate-400">🔍</span>
+                                            <input type="text" className="w-full bg-white border border-slate-300 rounded-xl py-3 pl-10 pr-4 text-sm font-bold shadow-sm outline-none focus:border-blue-500" placeholder="Pesquisar categoria, fornecedor ou descrição..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                                        </div>
+
                                         {despesasFiltradas.length === 0 ? <p className="text-center text-slate-400 py-10">Nenhum registo encontrado.</p> : (
                                             despesasFiltradas.map((d, i) => (
                                                 <div key={i} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
@@ -924,17 +704,11 @@
                                                     <div className="text-sm text-slate-600 leading-tight space-y-1">
                                                         {d.fornecedor && <p>🏢 <strong>{d.fornecedor}</strong></p>}
                                                         {d.descricao && <p>🔧 {d.descricao}</p>}
-                                                        {(d.valorMaoObra || d.valorPecas) && (
-                                                            <div className="bg-slate-50 p-2 rounded border border-slate-200 mt-2 grid grid-cols-2 text-xs">
-                                                                <p className="text-slate-500">M. Obra: <strong className="text-slate-800">{d.valorMaoObra ? formatCurrency(d.valorMaoObra) : 'R$ 0,00'}</strong></p>
-                                                                <p className="text-slate-500">Peças: <strong className="text-slate-800">{d.valorPecas ? formatCurrency(d.valorPecas) : 'R$ 0,00'}</strong></p>
-                                                            </div>
-                                                        )}
                                                     </div>
                                                     <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-100">
                                                         {d.anexos && d.anexos.length > 0 ? (
                                                             <details className="text-sm w-full">
-                                                                <summary className="text-blue-700 font-bold bg-blue-50 px-3 py-1 rounded-lg border border-blue-100 inline-block">📸 Ver {d.anexos.length} Anexo(s) na Nuvem ▾</summary>
+                                                                <summary className="text-blue-700 font-bold bg-blue-50 px-3 py-1 rounded-lg border border-blue-100 inline-block">📸 Ver {d.anexos.length} Anexo(s) ▾</summary>
                                                                 <div className="flex flex-col gap-2 mt-2 p-2 bg-slate-50 rounded-lg border border-slate-200">
                                                                     {d.anexos.map((url, idx) => (
                                                                         <a key={idx} href={url} target="_blank" className="text-blue-600 underline text-xs break-all">🔗 Abrir Anexo {idx+1}</a>
@@ -964,9 +738,6 @@
                                         <button onClick={() => { setView('dashboard'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'dashboard' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🏠</span><span className="text-[9px] font-bold uppercase">Painel</span>
                                         </button>
-                                        <button onClick={() => { setView('rotas'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'rotas' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
-                                            <span className="text-xl mb-0.5">🗺️</span><span className="text-[9px] font-bold uppercase">Rotas</span>
-                                        </button>
                                         <button onClick={() => { setView('abastecimento'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Abastecimento'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">⛽</span><span className="text-[9px] font-bold uppercase">Posto</span>
                                         </button>
@@ -976,16 +747,10 @@
                                         <button onClick={() => { setView('historico'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'historico' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🧾</span><span className="text-[9px] font-bold uppercase">Histórico</span>
                                         </button>
-                                        <button onClick={() => { setView('lembretes'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'lembretes' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
-                                            <span className="text-xl mb-0.5">🔔</span><span className="text-[9px] font-bold uppercase">Alertas</span>
-                                        </button>
                                     </div>
                                 ) : (
                                     <div className="flex justify-center items-center min-w-full gap-2 px-2">
-                                        <button onClick={() => { setView('rotas'); setExecucaoRota(null); }} className={`w-1/2 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'rotas' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
-                                            <span className="text-2xl mb-1">🗺️</span><span className="text-xs font-bold uppercase">Viagens</span>
-                                        </button>
-                                        <button onClick={() => { setView('os'); setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`w-1/2 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'os' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
+                                        <button onClick={() => { setView('os'); setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`w-full flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'os' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
                                             <span className="text-2xl mb-1">🔧</span><span className="text-xs font-bold uppercase">Registar O.S.</span>
                                         </button>
                                     </div>
@@ -993,63 +758,23 @@
                             </div>
                         )}
                     </div>
-
-                    {/* PDF INVISÍVEL */}
-                    <div id="pdf-content" style={{ display: 'none', width: '100%', backgroundColor: 'white', color: 'black', fontFamily: 'Arial', padding: '10px' }}>
-                        <div className="bg-slate-800 text-white rounded-lg p-2 mb-3 text-center">
-                            <h1 className="text-xl font-bold uppercase">{isGlobal ? 'Dossiê Consolidado RUBI FROTA' : 'Dossiê de Manutenção'}</h1>
-                        </div>
-                        <div className="border border-slate-300 rounded-lg p-3 mb-4 text-sm">
-                            <div className="grid grid-cols-2 gap-2">
-                                {isGlobal ? (
-                                    <>
-                                        <div><p className="text-[10px] text-slate-500 font-bold uppercase">Empresa / Frota</p><p className="font-bold">Visão Global</p></div>
-                                        <div><p className="text-[10px] text-slate-500 font-bold uppercase">Total Veículos Registados</p><p className="font-bold">{veiculos.length}</p></div>
-                                    </>
-                                ) : (
-                                    <>
-                                        <div><p className="text-[10px] text-slate-500 font-bold uppercase">Veículo</p><p className="font-bold">{veiculoAtual?.veiculo}</p></div>
-                                        <div><p className="text-[10px] text-slate-500 font-bold uppercase">Matrícula</p><p className="font-bold">{veiculoAtual?.placa}</p></div>
-                                    </>
-                                )}
-                                <div className="col-span-2 pt-2 border-t border-slate-200 mt-1 flex justify-between">
-                                    <p className="text-[10px] text-slate-500 font-bold uppercase">Custo Total Registado</p>
-                                    <p className="font-black text-blue-800 text-base">{formatCurrency(totalGasto)}</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="space-y-4">
-                            {despesasFiltradas.map((d, idx) => (
-                                <div key={idx} className="break-inside-avoid border-b pb-3 mb-3">
-                                    <div className="flex justify-between items-center mb-1">
-                                        <h2 className="text-sm font-black uppercase text-slate-800">#{idx + 1} - {d.categoria} {isGlobal && ` [Viatura: ${d.placa}]`}</h2>
-                                        <p className="text-sm font-black">{formatCurrency(d.valor)}</p>
-                                    </div>
-                                    <div className="flex justify-between items-center mb-1">
-                                        <p className="text-[10px] font-bold text-slate-500">{d.data} • KM: {d.km || 'N/I'}</p>
-                                        {d.situacao && <p className="text-[9px] font-bold text-slate-500 uppercase">Estado: {d.situacao}</p>}
-                                    </div>
-                                    <div className="bg-slate-50 p-2 rounded text-[11px] border border-slate-200">
-                                        {d.tipoOS && <p><strong>Intervenção:</strong> {d.tipoOS} | <strong>Local:</strong> {d.localOS}</p>}
-                                        <p><strong>Fornecedor:</strong> {d.fornecedor || 'N/A'}</p>
-                                        {d.descricao && <p><strong>Descrição:</strong> {d.descricao}</p>}
-                                        {(d.valorMaoObra || d.valorPecas) && (
-                                            <div className="border-t border-slate-200 mt-2 pt-1 flex gap-4 text-[10px] text-slate-600">
-                                                <span>Mão de Obra: <strong>{d.valorMaoObra ? formatCurrency(d.valorMaoObra) : 'R$ 0,00'}</strong></span>
-                                                <span>Peças: <strong>{d.valorPecas ? formatCurrency(d.valorPecas) : 'R$ 0,00'}</strong></span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
                 </div>
             );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ControleFrotaMulti />);
+    </script>
+
+    <!-- INICIAÇÃO DO SERVICE WORKER (PWA) -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => console.log('✅ Service Worker registado!', reg))
+                    .catch(err => console.error('❌ Erro no Service Worker', err));
+            });
+        }
     </script>
 </body>
 </html>
