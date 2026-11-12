@@ -38,23 +38,33 @@
 
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7N4C1lZperjJZiDlk_SPDEl4OlfvuvbjdePeWKa-qr2ojbu4kmL862ntMjjcZNPrPQQ/exec';
 
-        // COMPONENTE DE GRÁFICOS (CHART.JS WRAPPER)
+        // COMPONENTE DE GRÁFICOS REFORÇADO (Para não desaparecer no telemóvel)
         const ChartWrapper = ({ type, data, options }) => {
             const canvasRef = useRef(null);
             const chartInstance = useRef(null);
 
             useEffect(() => {
+                if (typeof window.Chart === 'undefined') return;
                 if (chartInstance.current) chartInstance.current.destroy();
                 const ctx = canvasRef.current.getContext('2d');
-                chartInstance.current = new window.Chart(ctx, { type, data, options });
+                
+                // Força a manter as proporções corretas dentro da caixa
+                const finalOptions = { ...options, maintainAspectRatio: false };
+                
+                chartInstance.current = new window.Chart(ctx, { type, data, options: finalOptions });
                 return () => { if (chartInstance.current) chartInstance.current.destroy(); };
             }, [type, data, options]);
 
-            return <canvas ref={canvasRef}></canvas>;
+            return (
+                <div className="relative w-full h-[250px] flex items-center justify-center">
+                    {typeof window.Chart === 'undefined' && <span className="text-xs text-red-400">Erro: Biblioteca de gráficos indisponível.</span>}
+                    <canvas ref={canvasRef}></canvas>
+                </div>
+            );
         };
 
         function ControleFrotaMulti() {
-            // 1. ESTADOS (HOOKS) NO TOPO ABSOLUTO
+            // ESTADOS (HOOKS)
             const [userRole, setUserRole] = useState(null); 
             const [veiculos, setVeiculos] = useState([]);
             const [veiculoAtivo, setVeiculoAtivo] = useState('TODOS'); 
@@ -91,18 +101,19 @@
             const [novaRotaGestor, setNovaRotaGestor] = useState({ origem: '', destino: '', observacoes: '' });
             const [execucaoRota, setExecucaoRota] = useState(null);
 
-            // 2. VARIÁVEIS BASE PARA OS GRÁFICOS (Garantir que existem antes do useMemo)
+            // VARIÁVEIS BASE
             const isGlobal = veiculoAtivo === 'TODOS';
             const veiculoAtual = isGlobal ? null : veiculos.find(v => v.placa === veiculoAtivo);
             const kmAtualNum = veiculoAtual ? parseFloat(veiculoAtual.kmAtual) || 0 : 0;
             const despesasIniciais = isGlobal ? despesas.slice().reverse() : despesas.filter(d => d.placa === veiculoAtivo).reverse();
 
-            // 3. PREPARAÇÃO DOS DADOS GRÁFICOS (USEMEMO)
+            // PREPARAÇÃO DOS DADOS GRÁFICOS
             const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b', '#0ea5e9'];
             
             const dataPorCategoria = useMemo(() => {
                 const map = {};
                 despesasIniciais.forEach(d => { map[d.categoria] = (map[d.categoria] || 0) + (parseFloat(d.valor) || 0); });
+                if (Object.keys(map).length === 0) return null; // Retorna null se não houver dados
                 return { labels: Object.keys(map), datasets: [{ data: Object.values(map), backgroundColor: coresGrafico, borderWidth: 1 }] };
             }, [despesasIniciais]);
 
@@ -114,6 +125,7 @@
                     map[mes] = (map[mes] || 0) + (parseFloat(d.valor) || 0);
                 });
                 const sortedKeys = Object.keys(map).sort();
+                if (sortedKeys.length === 0) return null;
                 return { labels: sortedKeys, datasets: [{ label: 'Gasto Mensal (R$)', data: sortedKeys.map(k => map[k]), backgroundColor: '#3b82f6', borderRadius: 4 }] };
             }, [despesasIniciais]);
 
@@ -122,6 +134,7 @@
                 const map = {};
                 despesasIniciais.forEach(d => { map[d.placa] = (map[d.placa] || 0) + (parseFloat(d.valor) || 0); });
                 const sorted = Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 10);
+                if (sorted.length === 0) return null;
                 return { labels: sorted.map(i => i[0]), datasets: [{ label: 'Custo Total', data: sorted.map(i => i[1]), backgroundColor: '#f59e0b', borderRadius: 4 }] };
             }, [despesasIniciais, isGlobal]);
 
@@ -130,8 +143,7 @@
                 const abs = despesasIniciais
                     .filter(d => d.categoria === 'Abastecimento' && (d.descricao && d.descricao.includes('L a')))
                     .sort((a, b) => new Date(a.data) - new Date(b.data));
-                const labels = [];
-                const data = [];
+                const labels = []; const data = [];
                 for(let i = 1; i < abs.length; i++) {
                     const kmAtual = parseFloat(abs[i].km);
                     const kmAnterior = parseFloat(abs[i-1].km);
@@ -139,26 +151,22 @@
                     const litros = match ? parseFloat(match[1]) : 0;
                     if(kmAtual > kmAnterior && litros > 0) {
                         const kml = (kmAtual - kmAnterior) / litros;
-                        if(kml > 0 && kml < 30) {
-                            labels.push(abs[i].data);
-                            data.push(kml.toFixed(2));
-                        }
+                        if(kml > 0 && kml < 30) { labels.push(abs[i].data); data.push(kml.toFixed(2)); }
                     }
                 }
+                if (labels.length === 0) return null;
                 return { labels, datasets: [{ label: 'KM por Litro', data, borderColor: '#10b981', backgroundColor: '#10b981', tension: 0.3, fill: false }] };
             }, [despesasIniciais, isGlobal]);
 
             const dataPecasMO = useMemo(() => {
                 if(isGlobal) return null;
                 let mo = 0, pecas = 0;
-                despesasIniciais.forEach(d => {
-                    mo += (parseFloat(d.valorMaoObra) || 0);
-                    pecas += (parseFloat(d.valorPecas) || 0);
-                });
+                despesasIniciais.forEach(d => { mo += (parseFloat(d.valorMaoObra) || 0); pecas += (parseFloat(d.valorPecas) || 0); });
+                if (mo === 0 && pecas === 0) return null;
                 return { labels: ['Mão de Obra', 'Peças'], datasets: [{ data: [mo, pecas], backgroundColor: ['#8b5cf6', '#ef4444'] }] };
             }, [despesasIniciais, isGlobal]);
 
-            // 4. EFEITOS (USEEFFECT)
+            // EFEITOS
             useEffect(() => {
                 const savedRole = localStorage.getItem('rubi_frota_role');
                 if (savedRole) { setUserRole(savedRole); if (savedRole === 'OPERACIONAL') setView('rotas'); }
@@ -175,7 +183,7 @@
                 }
             }, [view, veiculoAtivo, editingDespesaIndex]);
 
-            // 5. FUNÇÕES DE NUVEM
+            // NUVEM E BACKUP
             const carregarDaNuvem = async () => {
                 setSyncStatus('⏳ A puxar...');
                 try {
@@ -211,8 +219,7 @@
                         body: JSON.stringify({ action: 'sincronizar', veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots })
                     });
                     const result = await response.json();
-                    if (result.status === 'sucesso') setSyncStatus('☁️ OK');
-                    else setSyncStatus('⚠️ Erro Sync');
+                    if (result.status === 'sucesso') setSyncStatus('☁️ OK'); else setSyncStatus('⚠️ Erro Sync');
                 } catch (error) { setSyncStatus('⚠️ Offline'); }
             };
 
@@ -220,15 +227,11 @@
                 const dados = { veiculos, despesas, lembretes, rotas };
                 const blob = new Blob([JSON.stringify(dados)], {type: "application/json"});
                 const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `Backup_RUBI_FROTA_${new Date().toISOString().split('T')[0]}.json`;
-                a.click();
+                const a = document.createElement('a'); a.href = url; a.download = `Backup_RUBI_FROTA_${new Date().toISOString().split('T')[0]}.json`; a.click();
             };
 
             const importarBackup = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
+                const file = e.target.files[0]; if (!file) return;
                 const reader = new FileReader();
                 reader.onload = async (event) => {
                     try {
@@ -244,7 +247,7 @@
                 reader.readAsText(file);
             };
 
-            // 6. BARREIRA DE LOGIN
+            // ECRÃ DE LOGIN
             if (!userRole) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6 animate-fade-in">
@@ -271,7 +274,7 @@
                 );
             }
 
-            // 7. RESTANTES FILTROS E LÓGICA (Executados APÓS o Login)
+            // FUNÇÕES COMPARTILHADAS (Filtros e Atualizações)
             const despesasFiltradas = despesasIniciais.filter(d => 
                 (d.categoria && d.categoria.toLowerCase().includes(searchTerm.toLowerCase())) || 
                 (d.fornecedor && d.fornecedor.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -339,6 +342,7 @@
 
                 let novosVeiculos = veiculos;
                 if (novaDespesa.km) { novosVeiculos = atualizarKmVeiculo(novaDespesa.km, veiculoAtivo); setVeiculos(novosVeiculos); }
+
                 let novasDespesas = [...despesas];
                 const registoPronto = { ...novaDespesa, valor: valorFinal, descricao: descricaoFinal, placa: veiculoAtivo };
                 
@@ -374,6 +378,7 @@
                 if (arquivos.length === 0) return;
                 setIsUploading(true);
                 setFormError('');
+
                 const uploadPromises = arquivos.map(file => {
                     return new Promise((resolve, reject) => {
                         const reader = new FileReader();
@@ -385,9 +390,12 @@
                             } else {
                                 const img = new Image();
                                 img.onload = async () => {
-                                    const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
-                                    let w = img.width, h = img.height; if (w > 1200) { h *= 1200 / w; w = 1200; }
-                                    canvas.width = w; canvas.height = h; ctx.drawImage(img, 0, 0, w, h);
+                                    const canvas = document.createElement('canvas');
+                                    const ctx = canvas.getContext('2d');
+                                    let w = img.width, h = img.height;
+                                    if (w > 1200) { h *= 1200 / w; w = 1200; }
+                                    canvas.width = w; canvas.height = h;
+                                    ctx.drawImage(img, 0, 0, w, h);
                                     fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'upload_imagem', base64: canvas.toDataURL('image/jpeg', 0.7), nomeArquivo: `FOTO_${Date.now()}.jpg`, mimeType: 'image/jpeg' }) })
                                     .then(res => res.json()).then(result => { if (result.status === 'sucesso') resolve(result.url); else reject(); }).catch(() => reject());
                                 };
@@ -397,6 +405,7 @@
                         reader.readAsDataURL(file);
                     });
                 });
+
                 try {
                     const uploadedUrls = await Promise.all(uploadPromises);
                     setNovaDespesa(prev => ({ ...prev, anexos: [...(prev.anexos || []), ...uploadedUrls] }));
@@ -516,7 +525,9 @@
                 }).catch(() => setIsGenerating(false));
             };
 
-            // RENDERIZAÇÃO DA INTERFACE
+            // -----------------------------------------------------------
+            // RENDERIZAÇÃO DA INTERFACE PRINCIPAL
+            // -----------------------------------------------------------
             return (
                 <div className="min-h-screen font-sans text-slate-800 pb-24 md:pb-10 max-w-md md:max-w-4xl mx-auto md:mt-4 shadow-xl bg-white md:rounded-3xl overflow-hidden relative border border-slate-200">
                     
@@ -556,7 +567,43 @@
                             )}
                         </div>
 
-                        {/* CADASTRO DE VEÍCULO */}
+                        {/* ========================================================
+                            ESTADOS DE BLOQUEIO VISUAL CLARO (EMPTY STATES / LOCKS)
+                        ======================================================== */}
+
+                        {/* ESTADO 1: FROTA VAZIA (Nenhum veículo registado ainda) */}
+                        {!showCadastro && veiculos.length === 0 && (
+                            <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
+                                <span className="text-5xl block mb-4">🚘</span>
+                                <h2 className="font-bold text-xl text-slate-700 mb-2">Frota Vazia</h2>
+                                <p className="text-sm mb-6">Ainda não há veículos registados no sistema.</p>
+                                {userRole === 'GESTOR' ? (
+                                    <button onClick={() => setShowCadastro(true)} className="bg-blue-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg">Registar o 1º Veículo</button>
+                                ) : (
+                                    <p className="text-sm">Aguarde que o Gestor efetue o registo dos veículos.</p>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ESTADO 2: GESTOR TENTA ABRIR FORMULÁRIO SEM ESCOLHER CARRO */}
+                        {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'rotas' || view === 'os' || view === 'abastecimento' || view === 'lembretes') && (
+                            <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
+                                <span className="text-5xl block mb-4 opacity-50">🔒</span>
+                                <h2 className="font-bold text-xl text-slate-700 mb-2">Ação Não Permitida</h2>
+                                <p className="text-sm">Para ver ou preencher formulários, <strong>selecione a matrícula do veículo no menu escuro lá no topo.</strong></p>
+                            </div>
+                        )}
+
+                        {/* ESTADO 3: OPERACIONAL ACABOU DE ENTRAR E NÃO ESCOLHEU CARRO */}
+                        {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'OPERACIONAL' && (
+                            <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
+                                <span className="text-5xl block mb-4 opacity-50">👆</span>
+                                <h2 className="font-bold text-xl text-slate-700 mb-2">Selecione a Viatura</h2>
+                                <p className="text-sm">Por favor, escolha o seu veículo no <strong>menu escuro no topo do ecrã</strong> para iniciar a sua jornada.</p>
+                            </div>
+                        )}
+
+                        {/* CADASTRO DE VEÍCULO (SÓ GESTOR) */}
                         {showCadastro && userRole === 'GESTOR' && (
                             <div className="p-5 animate-fade-in space-y-4">
                                 <h2 className="font-bold text-lg text-slate-800">Registar Novo Veículo</h2>
@@ -571,24 +618,7 @@
                             </div>
                         )}
 
-                        {/* MENSAGENS DE BLOQUEIO */}
-                        {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'rotas' || view === 'os' || view === 'abastecimento' || view === 'lembretes') && (
-                            <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
-                                <span className="text-5xl block mb-4 opacity-50">🔒</span>
-                                <h2 className="font-bold text-xl text-slate-700 mb-2">Ação Não Permitida</h2>
-                                <p className="text-sm">Selecione uma viatura específica no menu superior para aceder a esta aba.</p>
-                            </div>
-                        )}
-
-                        {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'OPERACIONAL' && (
-                            <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
-                                <span className="text-5xl block mb-4 opacity-50">🚘</span>
-                                <h2 className="font-bold text-xl text-slate-700 mb-2">Selecione a Viatura</h2>
-                                <p className="text-sm">Escolha o seu veículo no menu acima para iniciar a jornada.</p>
-                            </div>
-                        )}
-
-                        {/* BLOCO CENTRAL (Dashboard, Histórico, O.S, etc) */}
+                        {/* BLOCO CENTRAL COM TODOS OS DADOS */}
                         {!showCadastro && veiculos.length > 0 && (!isGlobal || (isGlobal && userRole === 'GESTOR' && (view === 'dashboard' || view === 'historico'))) && (
                             <div className="p-4 space-y-4 mb-16">
                                 
@@ -596,7 +626,7 @@
                                 {view === 'dashboard' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         
-                                        {/* Ações de Backup */}
+                                        {/* Ações de Backup na Visão Global */}
                                         {isGlobal && (
                                             <div className="flex justify-between items-center bg-slate-50 border border-slate-200 p-2 rounded-xl">
                                                 <span className="text-[10px] font-bold text-slate-500 px-2">SEGURANÇA (JSON)</span>
@@ -629,36 +659,56 @@
                                             </div>
                                         </div>
 
-                                        {/* GRÁFICOS */}
+                                        {/* GRÁFICOS INTELIGENTES (Com Empty States para não parecer erro) */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {/* Gráficos Globais (Empresa) */}
+                                            {isGlobal && (!dataPorCategoria || dataPorCategoria.labels.length === 0) && (
+                                                <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
+                                                    <span className="text-3xl block mb-2 opacity-50">📊</span>
+                                                    <p className="text-slate-500 text-sm font-bold">Os gráficos da empresa aparecerão aqui assim que registar a primeira Despesa ou Abastecimento.</p>
+                                                </div>
+                                            )}
+
                                             {isGlobal && dataPorCategoria && dataPorCategoria.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Distribuição de Custos</h3>
-                                                    <ChartWrapper type="doughnut" data={dataPorCategoria} options={{ responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: {size: 10} } } } }} />
+                                                    <ChartWrapper type="doughnut" data={dataPorCategoria} options={{ plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: {size: 10} } } } }} />
                                                 </div>
                                             )}
+                                            
                                             {isGlobal && dataRankingVeiculos && dataRankingVeiculos.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-                                                    <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Top 10 Custos por Viatura</h3>
-                                                    <ChartWrapper type="bar" data={dataRankingVeiculos} options={{ indexAxis: 'y', responsive: true, plugins: { legend: { display: false } } }} />
+                                                    <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Top Custos por Viatura</h3>
+                                                    <ChartWrapper type="bar" data={dataRankingVeiculos} options={{ indexAxis: 'y', plugins: { legend: { display: false } } }} />
                                                 </div>
                                             )}
+
                                             {isGlobal && dataEvolucaoMensal && dataEvolucaoMensal.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Evolução Mensal de Gastos</h3>
-                                                    <ChartWrapper type="bar" data={dataEvolucaoMensal} options={{ responsive: true }} />
+                                                    <ChartWrapper type="bar" data={dataEvolucaoMensal} options={{}} />
                                                 </div>
                                             )}
+
+                                            {/* Gráficos Individuais (Por Carro) */}
+                                            {!isGlobal && (!dataConsumo || dataConsumo.labels.length === 0) && (!dataPecasMO) && (
+                                                <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
+                                                    <span className="text-3xl block mb-2 opacity-50">📉</span>
+                                                    <p className="text-slate-500 text-sm font-bold">Os gráficos deste veículo aparecerão aqui quando efetuar o primeiro abastecimento (com litros) ou O.S.</p>
+                                                </div>
+                                            )}
+
                                             {!isGlobal && dataConsumo && dataConsumo.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Evolução de Consumo (KM/L)</h3>
-                                                    <ChartWrapper type="line" data={dataConsumo} options={{ responsive: true, scales: { y: { beginAtZero: false } } }} />
+                                                    <ChartWrapper type="line" data={dataConsumo} options={{ scales: { y: { beginAtZero: false } } }} />
                                                 </div>
                                             )}
-                                            {!isGlobal && dataPecasMO && dataPecasMO.datasets[0].data[0] > 0 && (
+
+                                            {!isGlobal && dataPecasMO && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Custo de Manutenção</h3>
-                                                    <ChartWrapper type="doughnut" data={dataPecasMO} options={{ responsive: true, plugins: { legend: { position: 'bottom' } } }} />
+                                                    <ChartWrapper type="doughnut" data={dataPecasMO} options={{ plugins: { legend: { position: 'bottom' } } }} />
                                                 </div>
                                             )}
                                         </div>
@@ -782,7 +832,7 @@
                                         ) : (
                                             <div className="space-y-3">
                                                 <h3 className="font-bold text-slate-700 text-sm">Diário de Rotas</h3>
-                                                {rotasFiltradas.length === 0 ? <p className="text-xs text-slate-400 text-center py-4">Nenhuma rota.</p> : null}
+                                                {rotasFiltradas.length === 0 ? <p className="text-xs text-slate-400 text-center py-4">Nenhuma rota registada.</p> : null}
                                                 {rotasFiltradas.map(r => (
                                                     <div key={r.id} className={`p-4 rounded-xl border ${r.status === 'Pendente' ? 'bg-white border-amber-300 shadow-sm' : 'bg-slate-50 border-slate-200'}`}>
                                                         <div className="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
@@ -804,7 +854,7 @@
                                     </div>
                                 )}
 
-                                {/* 3. ABASTECIMENTO (SÓ GESTOR) */}
+                                {/* 3. ABASTECIMENTO */}
                                 {view === 'abastecimento' && !isGlobal && userRole === 'GESTOR' && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
@@ -849,7 +899,7 @@
                                     </div>
                                 )}
 
-                                {/* 4. ORDEM DE SERVIÇO (GESTOR E OPERACIONAL) */}
+                                {/* 4. ORDEM DE SERVIÇO */}
                                 {view === 'os' && !isGlobal && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
@@ -893,7 +943,7 @@
                                     </div>
                                 )}
 
-                                {/* 5. LEMBRETES CONFIGURAÇÃO (SÓ GESTOR) */}
+                                {/* 5. LEMBRETES */}
                                 {view === 'lembretes' && !isGlobal && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         <h2 className="text-xl font-bold text-slate-800">🔔 Configurar Alertas</h2>
@@ -923,7 +973,7 @@
                                     </div>
                                 )}
 
-                                {/* 6. HISTÓRICO COM PESQUISA (SÓ GESTOR) */}
+                                {/* 6. HISTÓRICO COM PESQUISA */}
                                 {view === 'historico' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         <div className="flex justify-between items-center">
@@ -1009,27 +1059,12 @@
                             </div>
                         )}
                     </div>
-                    
-                    <div id="pdf-content" style={{ display: 'none', width: '100%', backgroundColor: 'white', color: 'black', fontFamily: 'Arial', padding: '10px' }}>
-                        <div className="bg-slate-800 text-white rounded-lg p-2 mb-3 text-center">
-                            <h1 className="text-xl font-bold uppercase">{isGlobal ? 'Dossiê Consolidado RUBI FROTA' : 'Dossiê de Manutenção'}</h1>
-                        </div>
-                    </div>
                 </div>
             );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ControleFrotaMulti />);
-    </script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./service-worker.js')
-                    .then(reg => console.log('✅ Service Worker registado!', reg))
-                    .catch(err => console.error('❌ Erro no Service Worker', err));
-            });
-        }
     </script>
 </body>
 </html>
