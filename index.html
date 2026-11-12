@@ -272,7 +272,7 @@
                 );
             }
 
-            // FUNÇÕES COMPARTILHADAS
+            // FUNÇÕES COMPARTILHADAS E FILTROS
             const despesasFiltradas = despesasIniciais.filter(d => 
                 (d.categoria && d.categoria.toLowerCase().includes(searchTerm.toLowerCase())) || 
                 (d.fornecedor && d.fornecedor.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -356,7 +356,7 @@
                 if(userRole === 'GESTOR') {
                     setView('historico');
                 } else {
-                    setView('rotas'); // Retorna o motorista à aba de viagens
+                    setView('rotas');
                 }
             };
 
@@ -454,13 +454,20 @@
 
             const handleSalvarRascunhoRota = () => { localStorage.setItem('rubi_frota_rascunho_rota', JSON.stringify(execucaoRota)); alert('💾 Rascunho da viagem salvo!'); };
 
+            // ==========================================
+            // CORREÇÃO: CONCLUIR ROTA
+            // ==========================================
             const handleConcluirRota = () => {
                 if(!execucaoRota.data || !execucaoRota.kmInicial || !execucaoRota.kmFinal || !execucaoRota.motorista) return setFormError('Data, Motorista, KM Inicial e Final são obrigatórios.');
                 if(parseFloat(execucaoRota.kmFinal) <= parseFloat(execucaoRota.kmInicial)) return setFormError('O KM Final deve ser maior que o KM Inicial.');
                 setFormError('');
+                
                 const novosVeiculos = atualizarKmVeiculo(execucaoRota.kmFinal, veiculoAtivo);
                 setVeiculos(novosVeiculos);
-                const novasRotas = rotas.map(r => r.id === execucaoRota.id ? { ...r, status: 'Concluída', ...execucaoRota } : r);
+                
+                // Correção: a propriedade status agora é colocada no fim para anular o status 'Pendente' que vinha no execucaoRota
+                const novasRotas = rotas.map(r => r.id === execucaoRota.id ? { ...r, ...execucaoRota, status: 'Concluída' } : r);
+                
                 setRotas(novasRotas);
                 salvarNaNuvem(novosVeiculos, despesas, lembretes, novasRotas);
                 localStorage.removeItem('rubi_frota_rascunho_rota');
@@ -656,8 +663,9 @@
                                             </div>
                                         </div>
 
-                                        {/* GRÁFICOS INTELIGENTES */}
+                                        {/* GRÁFICOS INTELIGENTES (Com Empty States para não parecer erro) */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {/* Gráficos Globais (Empresa) */}
                                             {isGlobal && (!dataPorCategoria || dataPorCategoria.labels.length === 0) && (
                                                 <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
                                                     <span className="text-3xl block mb-2 opacity-50">📊</span>
@@ -686,6 +694,7 @@
                                                 </div>
                                             )}
 
+                                            {/* Gráficos Individuais (Por Carro) */}
                                             {!isGlobal && (!dataConsumo || dataConsumo.labels.length === 0) && (!dataPecasMO) && (
                                                 <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
                                                     <span className="text-3xl block mb-2 opacity-50">📉</span>
@@ -777,7 +786,7 @@
                                     </div>
                                 )}
 
-                                {/* 2. ROTAS (GESTOR E OPERACIONAL) */}
+                                {/* 2. ROTAS */}
                                 {view === 'rotas' && !isGlobal && (
                                     <div className="animate-fade-in space-y-4">
                                         {userRole === 'GESTOR' && (
@@ -787,7 +796,7 @@
                                                     <input className="w-full border p-2 rounded-lg text-sm" placeholder="Origem" value={novaRotaGestor.origem} onChange={e => setNovaRotaGestor({...novaRotaGestor, origem: e.target.value})} />
                                                     <input className="w-full border p-2 rounded-lg text-sm" placeholder="Destino" value={novaRotaGestor.destino} onChange={e => setNovaRotaGestor({...novaRotaGestor, destino: e.target.value})} />
                                                 </div>
-                                                <input className="w-full border p-2 rounded-lg text-sm" placeholder="Observações..." value={novaRotaGestor.observacoes} onChange={e => setNovaRotaGestor({...novaRotaGestor, observacoes: e.target.value})} />
+                                                <input className="w-full border p-2 rounded-lg text-sm" placeholder="Observações (Opcional)..." value={novaRotaGestor.observacoes} onChange={e => setNovaRotaGestor({...novaRotaGestor, observacoes: e.target.value})} />
                                                 <button onClick={handleCriarRota} className="w-full bg-blue-700 text-white font-bold p-3 rounded-xl text-sm shadow">Delegar Rota</button>
                                             </div>
                                         )}
@@ -796,8 +805,13 @@
                                             <div className="bg-white p-4 rounded-2xl border border-amber-300 shadow-lg relative">
                                                 <button onClick={() => setExecucaoRota(null)} className="absolute top-4 right-4 text-slate-400 font-bold text-xs bg-slate-100 px-2 py-1 rounded">Voltar</button>
                                                 <h3 className="font-bold text-amber-600 mb-1">▶️ Executar Rota</h3>
-                                                <p className="text-sm font-bold text-slate-700">{execucaoRota.origem} ➔ {execucaoRota.destino}</p>
+                                                <p className="text-sm font-bold text-slate-700 mb-1">{execucaoRota.origem} ➔ {execucaoRota.destino}</p>
                                                 
+                                                {/* CORREÇÃO: Observações visíveis na hora de preencher */}
+                                                {execucaoRota.observacoes && (
+                                                    <p className="text-xs text-slate-600 mb-4 bg-blue-50 p-2 rounded border border-blue-100">📌 {execucaoRota.observacoes}</p>
+                                                )}
+
                                                 <div className="space-y-3 mt-4">
                                                     <div className="grid grid-cols-2 gap-2">
                                                         <input type="date" className="w-full border p-3 rounded-xl bg-slate-50 text-sm" value={execucaoRota.data} onChange={e => setExecucaoRota({...execucaoRota, data: e.target.value})} />
@@ -834,8 +848,21 @@
                                                             <div>
                                                                 <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase mb-1 inline-block ${r.status === 'Pendente' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>{r.status}</span>
                                                                 <h4 className="font-bold text-slate-800 text-sm leading-tight">{r.origem} ➔ {r.destino}</h4>
+                                                                {r.status === 'Concluída' && <p className="text-xs text-slate-500">{r.data} • {r.motorista}</p>}
                                                             </div>
+                                                            {r.status === 'Concluída' && (
+                                                                <div className="text-right">
+                                                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Distância</p>
+                                                                    <p className="font-black text-slate-700">{(r.kmFinal - r.kmInicial).toLocaleString()} km</p>
+                                                                </div>
+                                                            )}
                                                         </div>
+                                                        
+                                                        {/* CORREÇÃO: Observações renderizadas no histórico de rotas */}
+                                                        {r.observacoes && (
+                                                            <p className="text-xs text-slate-600 mb-3 bg-blue-50 p-2 rounded border border-blue-100">📌 {r.observacoes}</p>
+                                                        )}
+                                                        
                                                         {r.status === 'Pendente' && userRole === 'OPERACIONAL' && (
                                                             <button onClick={() => iniciarExecucaoRota(r)} className="w-full mt-2 bg-amber-500 text-white font-bold p-2 rounded-lg text-sm">Preencher Rota</button>
                                                         )}
@@ -849,7 +876,7 @@
                                     </div>
                                 )}
 
-                                {/* 3. ABASTECIMENTO / POSTO (GESTOR E OPERACIONAL) */}
+                                {/* 3. ABASTECIMENTO (SÓ GESTOR) */}
                                 {view === 'abastecimento' && !isGlobal && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
@@ -894,7 +921,7 @@
                                     </div>
                                 )}
 
-                                {/* 4. ORDEM DE SERVIÇO (GESTOR E OPERACIONAL) */}
+                                {/* 4. ORDEM DE SERVIÇO */}
                                 {view === 'os' && !isGlobal && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
@@ -1020,14 +1047,10 @@
                             </div>
                         )}
 
-                        {/* ========================================================
-                            MENUS INFERIORES DE NAVEGAÇÃO
-                        ======================================================== */}
+                        {/* MENU INFERIOR */}
                         {!showCadastro && veiculos.length > 0 && (
                             <div className="fixed md:absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 px-1 py-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 overflow-x-auto hide-scroll">
-                                
                                 {userRole === 'GESTOR' ? (
-                                    /* MENU DO GESTOR (6 Botões) */
                                     <div className="flex justify-between items-center min-w-full gap-1">
                                         <button onClick={() => { setView('dashboard'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'dashboard' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🏠</span><span className="text-[9px] font-bold uppercase">Painel</span>
@@ -1041,35 +1064,28 @@
                                         <button onClick={() => { setView('os'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'os' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🔧</span><span className="text-[9px] font-bold uppercase">O.S.</span>
                                         </button>
-                                        <button onClick={() => { setView('lembretes'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'lembretes' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
-                                            <span className="text-xl mb-0.5">🔔</span><span className="text-[9px] font-bold uppercase">Alertas</span>
-                                        </button>
                                         <button onClick={() => { setView('historico'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'historico' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🧾</span><span className="text-[9px] font-bold uppercase">Histórico</span>
                                         </button>
+                                        <button onClick={() => { setView('lembretes'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'lembretes' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">🔔</span><span className="text-[9px] font-bold uppercase">Alertas</span>
+                                        </button>
                                     </div>
                                 ) : (
-                                    /* MENU DO OPERACIONAL (3 Botões) */
                                     <div className="flex justify-center items-center min-w-full gap-2 px-2">
-                                        <button onClick={() => { setView('rotas'); setExecucaoRota(null); }} className={`w-1/3 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'rotas' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
-                                            <span className="text-2xl mb-1">🗺️</span><span className="text-[10px] font-bold uppercase">Viagens</span>
+                                        <button onClick={() => { setView('rotas'); setExecucaoRota(null); }} className={`w-1/2 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'rotas' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
+                                            <span className="text-2xl mb-1">🗺️</span><span className="text-xs font-bold uppercase">Viagens</span>
                                         </button>
-                                        <button onClick={() => { setView('abastecimento'); setNovaDespesa({...defaultDespesa, categoria: 'Abastecimento'}); }} className={`w-1/3 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
-                                            <span className="text-2xl mb-1">⛽</span><span className="text-[10px] font-bold uppercase">Posto</span>
+                                        <button onClick={() => { setView('abastecimento'); setNovaDespesa({...defaultDespesa, categoria: 'Abastecimento'}); }} className={`w-1/2 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
+                                            <span className="text-2xl mb-1">⛽</span><span className="text-xs font-bold uppercase">Posto</span>
                                         </button>
-                                        <button onClick={() => { setView('os'); setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`w-1/3 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'os' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
-                                            <span className="text-2xl mb-1">🔧</span><span className="text-[10px] font-bold uppercase">Registar O.S.</span>
+                                        <button onClick={() => { setView('os'); setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`w-1/2 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'os' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
+                                            <span className="text-2xl mb-1">🔧</span><span className="text-xs font-bold uppercase">Registar O.S.</span>
                                         </button>
                                     </div>
                                 )}
                             </div>
                         )}
-                    </div>
-                    
-                    <div id="pdf-content" style={{ display: 'none', width: '100%', backgroundColor: 'white', color: 'black', fontFamily: 'Arial', padding: '10px' }}>
-                        <div className="bg-slate-800 text-white rounded-lg p-2 mb-3 text-center">
-                            <h1 className="text-xl font-bold uppercase">{isGlobal ? 'Dossiê Consolidado RUBI FROTA' : 'Dossiê de Manutenção'}</h1>
-                        </div>
                     </div>
                 </div>
             );
@@ -1077,15 +1093,6 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ControleFrotaMulti />);
-    </script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./service-worker.js')
-                    .then(reg => console.log('✅ Service Worker registado!', reg))
-                    .catch(err => console.error('❌ Erro no Service Worker', err));
-            });
-        }
     </script>
 </body>
 </html>
