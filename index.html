@@ -46,7 +46,6 @@
             const [syncStatus, setSyncStatus] = useState('☁️ A conectar...');
             const [editingDespesaIndex, setEditingDespesaIndex] = useState(null);
             
-            // NOVO ESTADO: Upload de Imagens
             const [isUploading, setIsUploading] = useState(false);
 
             const [novoVeiculo, setNovoVeiculo] = useState({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
@@ -76,6 +75,19 @@
                 }
                 carregarDaNuvem();
             }, []);
+
+            // VERIFICAÇÃO AUTOMÁTICA DE RASCUNHOS DE DESPESAS (O.S. / ABASTECIMENTO)
+            useEffect(() => {
+                if ((view === 'os' || view === 'abastecimento') && editingDespesaIndex === null && veiculoAtivo !== 'TODOS') {
+                    const rascunhoStr = localStorage.getItem('rubi_frota_rascunho_despesa');
+                    if (rascunhoStr) {
+                        const parsed = JSON.parse(rascunhoStr);
+                        if (parsed.view === view && parsed.veiculo === veiculoAtivo) {
+                            setNovaDespesa(parsed.despesa);
+                        }
+                    }
+                }
+            }, [view, veiculoAtivo, editingDespesaIndex]);
 
             // FUNÇÕES DE NUVEM
             const carregarDaNuvem = async () => {
@@ -182,7 +194,27 @@
                 return veiculos;
             };
 
-            // FUNÇÕES DE AÇÃO
+            // ----------------------------------------------------
+            // FUNÇÕES DE RASCUNHO (SALVAR PARCIALMENTE)
+            // ----------------------------------------------------
+            const handleSalvarRascunhoDespesa = () => {
+                localStorage.setItem('rubi_frota_rascunho_despesa', JSON.stringify({
+                    view: view,
+                    veiculo: veiculoAtivo,
+                    despesa: novaDespesa
+                }));
+                alert('💾 Rascunho salvo com sucesso! Pode fechar o aplicativo e concluir mais tarde.');
+            };
+
+            const handleSalvarRascunhoRota = () => {
+                localStorage.setItem('rubi_frota_rascunho_rota', JSON.stringify(execucaoRota));
+                alert('💾 Rascunho da viagem salvo! Pode fechar o aplicativo e concluir mais tarde.');
+            };
+
+
+            // ----------------------------------------------------
+            // FUNÇÕES DE AÇÃO PRINCIPAIS
+            // ----------------------------------------------------
             const handleAddVeiculo = () => {
                 if (!novoVeiculo.veiculo || !novoVeiculo.placa) return alert('Veículo e Matrícula/Placa são obrigatórios!');
                 const placaUpper = novoVeiculo.placa.toUpperCase();
@@ -218,14 +250,18 @@
                 let novasDespesas = [...despesas];
                 if (editingDespesaIndex !== null) {
                     novasDespesas[editingDespesaIndex] = { ...novaDespesa, valor: valorFinal, placa: veiculoAtivo };
-                    alert('Registo atualizado!');
+                    alert('✅ Registo atualizado!');
                 } else {
                     novasDespesas = [...despesas, { ...novaDespesa, valor: valorFinal, placa: veiculoAtivo }];
-                    alert('Registo guardado!');
+                    alert('✅ Registo guardado com sucesso!');
                 }
 
                 setDespesas(novasDespesas);
                 salvarNaNuvem(novosVeiculos, novasDespesas, lembretes, rotas);
+                
+                // Limpa o Rascunho, pois já foi concluído!
+                localStorage.removeItem('rubi_frota_rascunho_despesa');
+                
                 setEditingDespesaIndex(null);
                 setNovaDespesa(defaultDespesa);
                 if(userRole === 'GESTOR') setView('historico');
@@ -280,6 +316,15 @@
             };
 
             const iniciarExecucaoRota = (rota) => {
+                // Tenta recuperar rascunho se existir para esta viagem
+                const rascunhoStr = localStorage.getItem('rubi_frota_rascunho_rota');
+                if (rascunhoStr) {
+                    const parsed = JSON.parse(rascunhoStr);
+                    if (parsed.id === rota.id) {
+                        setExecucaoRota(parsed);
+                        return;
+                    }
+                }
                 setExecucaoRota({ ...rota, data: new Date().toISOString().split('T')[0], kmInicial: kmAtualNum });
             };
 
@@ -297,8 +342,12 @@
                 const novasRotas = rotas.map(r => r.id === execucaoRota.id ? { ...r, status: 'Concluída', ...execucaoRota } : r);
                 setRotas(novasRotas);
                 salvarNaNuvem(novosVeiculos, despesas, lembretes, novasRotas);
+                
+                // Limpa o rascunho ao concluir a viagem
+                localStorage.removeItem('rubi_frota_rascunho_rota');
+                
                 setExecucaoRota(null);
-                alert('Viagem concluída com sucesso!');
+                alert('✅ Viagem concluída com sucesso!');
             };
 
             const removerRota = (id) => {
@@ -362,7 +411,6 @@
                         reader.onload = event => {
                             const img = new Image();
                             img.onload = async () => {
-                                // Comprime a imagem para não estoirar o Drive
                                 const canvas = document.createElement('canvas');
                                 const ctx = canvas.getContext('2d');
                                 let w = img.width, h = img.height;
@@ -473,7 +521,7 @@
                             </div>
                         )}
 
-                        {/* BLOQUEIOS */}
+                        {/* BLOQUEIOS DE ACESSO */}
                         {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'rotas' || view === 'os' || view === 'abastecimento' || view === 'lembretes') && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4 opacity-50">🔒</span>
@@ -639,7 +687,16 @@
                                                         </div>
                                                     </div>
                                                     {formError && <p className="text-red-500 font-bold text-xs text-center">{formError}</p>}
-                                                    <button onClick={handleConcluirRota} className="w-full bg-green-600 text-white font-bold p-4 rounded-xl shadow-lg hover:bg-green-700">Concluir Viagem</button>
+                                                    
+                                                    {/* BOTÕES DE SALVAR (ROTAS) */}
+                                                    <div className="flex gap-2 pt-2 border-t border-slate-100">
+                                                        <button onClick={handleSalvarRascunhoRota} className="w-1/2 bg-slate-100 border border-slate-300 text-slate-600 font-bold p-3 rounded-xl hover:bg-slate-200 transition text-sm">
+                                                            💾 Salvar Parcialmente
+                                                        </button>
+                                                        <button onClick={handleConcluirRota} className="w-1/2 bg-green-600 text-white font-bold p-3 rounded-xl shadow-lg hover:bg-green-700 transition text-sm">
+                                                            ✅ Salvar e Concluir
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         ) : (
@@ -701,12 +758,18 @@
                                                 <input type="file" accept="image/*" className="hidden" disabled={isUploading} onChange={handleImageUpload} />
                                             </label>
                                             
-                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} foto(s) na nuvem.</p>}
+                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} foto(s) anexada(s).</p>}
                                             {formError && <p className="text-red-500 font-bold text-sm text-center">{formError}</p>}
                                             
-                                            <button onClick={handleAddDespesa} disabled={isUploading} className={`w-full text-white font-bold p-4 rounded-xl shadow-lg transition ${isUploading ? 'bg-slate-400 cursor-not-allowed' : editingDespesaIndex !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-700 hover:bg-blue-800'}`}>
-                                                {isUploading ? 'Aguarde o Upload...' : editingDespesaIndex !== null ? 'Guardar Alterações' : 'Confirmar Abastecimento'}
-                                            </button>
+                                            {/* BOTÕES DE SALVAR (ABASTECIMENTO) */}
+                                            <div className="flex gap-2 pt-2 border-t border-slate-100">
+                                                <button onClick={handleSalvarRascunhoDespesa} disabled={isUploading} className="w-1/2 bg-slate-100 border border-slate-300 text-slate-600 font-bold p-3 rounded-xl hover:bg-slate-200 transition text-sm">
+                                                    💾 Salvar Parcialmente
+                                                </button>
+                                                <button onClick={handleAddDespesa} disabled={isUploading} className={`w-1/2 text-white font-bold p-3 rounded-xl shadow-lg transition text-sm ${isUploading ? 'bg-slate-400 cursor-not-allowed' : editingDespesaIndex !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-700 hover:bg-blue-800'}`}>
+                                                    {isUploading ? 'Aguarde Upload...' : editingDespesaIndex !== null ? 'Guardar Alterações' : '✅ Salvar e Concluir'}
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -767,12 +830,18 @@
                                                 <input type="file" accept="image/*" multiple className="hidden" disabled={isUploading} onChange={handleImageUpload} />
                                             </label>
 
-                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} foto(s) na nuvem.</p>}
+                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} foto(s) anexada(s).</p>}
                                             {formError && <p className="text-red-500 font-bold text-sm text-center">{formError}</p>}
                                             
-                                            <button onClick={handleAddDespesa} disabled={isUploading} className={`w-full text-white font-bold p-4 rounded-xl shadow-lg transition ${isUploading ? 'bg-slate-400 cursor-not-allowed' : editingDespesaIndex !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-800 hover:bg-slate-900'}`}>
-                                                {isUploading ? 'Aguarde o Upload...' : editingDespesaIndex !== null ? 'Guardar Alterações' : 'Registar Ordem de Serviço'}
-                                            </button>
+                                            {/* BOTÕES DE SALVAR (O.S.) */}
+                                            <div className="flex gap-2 pt-2 border-t border-slate-100">
+                                                <button onClick={handleSalvarRascunhoDespesa} disabled={isUploading} className="w-1/2 bg-slate-100 border border-slate-300 text-slate-600 font-bold p-3 rounded-xl hover:bg-slate-200 transition text-sm">
+                                                    💾 Salvar Parcialmente
+                                                </button>
+                                                <button onClick={handleAddDespesa} disabled={isUploading} className={`w-1/2 text-white font-bold p-3 rounded-xl shadow-lg transition text-sm ${isUploading ? 'bg-slate-400 cursor-not-allowed' : editingDespesaIndex !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-800 hover:bg-slate-900'}`}>
+                                                    {isUploading ? 'Aguarde Upload...' : editingDespesaIndex !== null ? 'Guardar Alterações' : '✅ Salvar e Concluir'}
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -898,10 +967,10 @@
                                         <button onClick={() => { setView('rotas'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'rotas' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🗺️</span><span className="text-[9px] font-bold uppercase">Rotas</span>
                                         </button>
-                                        <button onClick={() => { setView('abastecimento'); if(editingDespesaIndex === null) setNovaDespesa({...novaDespesa, categoria: 'Abastecimento', situacao: 'Concluída'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                        <button onClick={() => { setView('abastecimento'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Abastecimento'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">⛽</span><span className="text-[9px] font-bold uppercase">Posto</span>
                                         </button>
-                                        <button onClick={() => { setView('os'); if(editingDespesaIndex === null) setNovaDespesa({...novaDespesa, categoria: 'Mecânica / Manutenção', situacao: 'Concluída'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'os' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                        <button onClick={() => { setView('os'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'os' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🔧</span><span className="text-[9px] font-bold uppercase">O.S.</span>
                                         </button>
                                         <button onClick={() => { setView('historico'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'historico' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
@@ -916,7 +985,7 @@
                                         <button onClick={() => { setView('rotas'); setExecucaoRota(null); }} className={`w-1/2 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'rotas' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
                                             <span className="text-2xl mb-1">🗺️</span><span className="text-xs font-bold uppercase">Viagens</span>
                                         </button>
-                                        <button onClick={() => { setView('os'); setNovaDespesa({...novaDespesa, categoria: 'Mecânica / Manutenção', situacao: 'Concluída'}); }} className={`w-1/2 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'os' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
+                                        <button onClick={() => { setView('os'); setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`w-1/2 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'os' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
                                             <span className="text-2xl mb-1">🔧</span><span className="text-xs font-bold uppercase">Registar O.S.</span>
                                         </button>
                                     </div>
