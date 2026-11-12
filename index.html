@@ -31,6 +31,9 @@
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7N4C1lZperjJZiDlk_SPDEl4OlfvuvbjdePeWKa-qr2ojbu4kmL862ntMjjcZNPrPQQ/exec';
 
         function ControleFrotaMulti() {
+            // Estado de Acesso (Login)
+            const [userRole, setUserRole] = useState(null); // 'GESTOR' ou 'OPERACIONAL'
+            
             const [veiculos, setVeiculos] = useState([]);
             const [veiculoAtivo, setVeiculoAtivo] = useState('TODOS'); 
             const [despesas, setDespesas] = useState([]);
@@ -64,6 +67,11 @@
 
             // CARREGAMENTO INICIAL
             useEffect(() => {
+                const savedRole = localStorage.getItem('rubi_frota_role');
+                if (savedRole) {
+                    setUserRole(savedRole);
+                    if (savedRole === 'OPERACIONAL') setView('os');
+                }
                 carregarDaNuvem();
             }, []);
 
@@ -116,7 +124,56 @@
                 }
             };
 
-            // LÓGICA DE DADOS
+            const handleLogout = () => {
+                if(confirm("Deseja sair da sua conta atual?")) {
+                    setUserRole(null);
+                    localStorage.removeItem('rubi_frota_role');
+                    setView('dashboard');
+                }
+            };
+
+            // ECRÃ DE LOGIN (PERFIS DE ACESSO)
+            if (!userRole) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6 animate-fade-in">
+                        <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-2 bg-blue-500"></div>
+                            
+                            <h1 className="text-4xl font-black tracking-tight text-blue-600 mb-1 mt-4">RUBI<span className="text-slate-800 font-light">FROTA</span></h1>
+                            <p className="text-slate-500 text-sm mb-10">Selecione o seu perfil de acesso</p>
+                            
+                            <div className="space-y-4">
+                                <button onClick={() => {
+                                    const pin = prompt("Digite a senha do Gestor (A senha padrão é 1234):");
+                                    if (pin === '1234') {
+                                        setUserRole('GESTOR');
+                                        localStorage.setItem('rubi_frota_role', 'GESTOR');
+                                        setView('dashboard');
+                                    } else if (pin !== null) {
+                                        alert('Senha incorreta! Acesso negado.');
+                                    }
+                                }} className="w-full bg-slate-800 text-white font-bold p-4 rounded-2xl hover:bg-slate-900 transition flex items-center justify-center gap-3 shadow-md">
+                                    <span className="text-2xl">👔</span> 
+                                    <span>Acesso Gestor</span>
+                                </button>
+                                
+                                <button onClick={() => {
+                                    setUserRole('OPERACIONAL');
+                                    localStorage.setItem('rubi_frota_role', 'OPERACIONAL');
+                                    setView('os'); // Força a visão para a O.S.
+                                }} className="w-full bg-blue-50 text-blue-700 font-bold p-4 rounded-2xl border border-blue-200 hover:bg-blue-100 transition flex items-center justify-center gap-3">
+                                    <span className="text-2xl">🔧</span> 
+                                    <span>Acesso Operacional</span>
+                                </button>
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-8">Sincronização em Nuvem Ativa</p>
+                        </div>
+                    </div>
+                );
+            }
+
+
+            // LÓGICA DE DADOS DA APLICAÇÃO
             const isGlobal = veiculoAtivo === 'TODOS';
             const veiculoAtual = isGlobal ? null : veiculos.find(v => v.placa === veiculoAtivo);
             
@@ -162,15 +219,15 @@
                 
                 if (view === 'os') {
                     const totalOS = (parseFloat(novaDespesa.valorMaoObra) || 0) + (parseFloat(novaDespesa.valorPecas) || 0);
-                    if (totalOS <= 0 && novaDespesa.situacao === 'Concluída') {
+                    if (totalOS <= 0 && novaDespesa.situacao === 'Concluída' && userRole === 'GESTOR') {
                         setFormError('Informe o valor da Mão de Obra ou das Peças para uma O.S. Concluída.');
                         return;
                     }
                     valorFinal = totalOS > 0 ? totalOS.toFixed(2) : '0.00';
                 }
 
-                if (!novaDespesa.data || (!valorFinal && view !== 'os')) {
-                    setFormError('Data e Valor são obrigatórios.');
+                if (!novaDespesa.data) {
+                    setFormError('A data é obrigatória.');
                     return;
                 }
                 setFormError('');
@@ -184,11 +241,9 @@
                 let novasDespesas = [...despesas];
                 
                 if (editingDespesaIndex !== null) {
-                    // Atualiza registo existente
                     novasDespesas[editingDespesaIndex] = { ...novaDespesa, valor: valorFinal, placa: veiculoAtivo };
                     alert('Registo atualizado com sucesso!');
                 } else {
-                    // Adiciona novo registo
                     novasDespesas = [...despesas, { ...novaDespesa, valor: valorFinal, placa: veiculoAtivo }];
                     alert('Registo guardado com sucesso!');
                 }
@@ -198,11 +253,13 @@
                 
                 setEditingDespesaIndex(null);
                 setNovaDespesa(defaultDespesa);
-                setView('historico');
+                
+                if(userRole === 'GESTOR') {
+                    setView('historico');
+                }
             };
 
             const handleEditDespesa = (despesa) => {
-                // Encontra o índice real no array original
                 const indexReal = despesas.indexOf(despesa);
                 setEditingDespesaIndex(indexReal);
                 setNovaDespesa(despesa);
@@ -365,30 +422,41 @@
                         <div className="bg-slate-900 text-white p-5 rounded-b-3xl md:rounded-t-3xl md:rounded-b-none shadow-md">
                             <div className="flex justify-between items-center mb-4">
                                 <div className="flex items-center gap-3">
-                                    <h1 className="text-2xl font-black tracking-tight text-blue-400">RUBI<span className="text-white font-light">FROTA</span></h1>
-                                    <button onClick={carregarDaNuvem} className="bg-slate-800 border border-slate-700 text-[10px] font-bold px-2 py-1 rounded-lg text-slate-300 hover:bg-slate-700 transition" title="Sincronizar Nuvem">
+                                    <h1 className="text-xl font-black tracking-tight text-blue-400">RUBI<span className="text-white font-light">FROTA</span></h1>
+                                    <button onClick={carregarDaNuvem} className="bg-slate-800 border border-slate-700 text-[9px] font-bold px-2 py-1 rounded-lg text-slate-300 hover:bg-slate-700 transition" title="Sincronizar Nuvem">
                                         {syncStatus}
                                     </button>
                                 </div>
-                                <button onClick={() => setShowCadastro(!showCadastro)} className="bg-slate-800 hover:bg-slate-700 text-xs px-3 py-2 rounded-full font-bold border border-slate-700 transition">
-                                    {showCadastro ? 'Cancelar' : '+ Veículo'}
-                                </button>
+                                <div className="flex gap-2">
+                                    {userRole === 'GESTOR' && (
+                                        <button onClick={() => setShowCadastro(!showCadastro)} className="bg-blue-600 hover:bg-blue-500 text-[10px] px-3 py-1.5 rounded-full font-bold transition">
+                                            {showCadastro ? 'Cancelar' : '+ Veículo'}
+                                        </button>
+                                    )}
+                                    <button onClick={handleLogout} className="bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-full transition">
+                                        Sair
+                                    </button>
+                                </div>
                             </div>
                             
                             {!showCadastro && veiculos.length > 0 && (
                                 <div className="bg-slate-800 rounded-2xl p-2 flex items-center border border-slate-700 focus-within:ring-2 focus-within:ring-blue-500">
                                     <span className="pl-3 text-slate-400 text-xl">{isGlobal ? '🌐' : '🚘'}</span>
                                     <select className="w-full p-2 bg-transparent text-white font-bold outline-none appearance-none" 
-                                            value={veiculoAtivo} onChange={e => { setVeiculoAtivo(e.target.value); setView('dashboard'); setEditingDespesaIndex(null); }}>
-                                        <option value="TODOS" className="text-slate-900 font-bold bg-slate-100">🌐 VISÃO GLOBAL (Toda a Frota)</option>
+                                            value={veiculoAtivo} onChange={e => { 
+                                                setVeiculoAtivo(e.target.value); 
+                                                if (userRole === 'GESTOR') { setView('dashboard'); setEditingDespesaIndex(null); }
+                                            }}>
+                                        {userRole === 'GESTOR' && <option value="TODOS" className="text-slate-900 font-bold bg-slate-100">🌐 VISÃO GLOBAL (Toda a Frota)</option>}
+                                        {userRole === 'OPERACIONAL' && <option value="TODOS" className="text-slate-900 font-bold bg-slate-100">-- Selecione a Viatura --</option>}
                                         {veiculos.map((v, i) => <option key={i} value={v.placa} className="text-slate-900">{v.placa} - {v.veiculo}</option>)}
                                     </select>
                                 </div>
                             )}
                         </div>
 
-                        {/* CADASTRO DE VEÍCULO */}
-                        {showCadastro && (
+                        {/* CADASTRO DE VEÍCULO (SÓ GESTOR) */}
+                        {showCadastro && userRole === 'GESTOR' && (
                             <div className="p-5 animate-fade-in space-y-4">
                                 <h2 className="font-bold text-lg text-slate-800">Registar Novo Veículo</h2>
                                 <input className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-400" placeholder="Marca / Modelo" value={novoVeiculo.veiculo} onChange={e => setNovoVeiculo({...novoVeiculo, veiculo: e.target.value})} />
@@ -400,21 +468,25 @@
                         )}
 
                         {/* MENSAGEM DE BLOQUEIO NA VISÃO GLOBAL */}
-                        {!showCadastro && isGlobal && (view === 'abastecimento' || view === 'os' || view === 'lembretes') && veiculos.length > 0 && (
+                        {!showCadastro && isGlobal && veiculos.length > 0 && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
-                                <span className="text-5xl block mb-4 opacity-50">🔒</span>
-                                <h2 className="font-bold text-xl text-slate-700 mb-2">Ação Não Permitida</h2>
-                                <p className="text-sm">Para registar abastecimentos, ordens de serviço ou criar alertas, selecione um veículo específico no menu superior.</p>
-                                <button onClick={() => setView('dashboard')} className="mt-6 text-blue-600 font-bold border border-blue-600 px-4 py-2 rounded-lg">Voltar ao Painel</button>
+                                <span className="text-5xl block mb-4 opacity-50">{userRole === 'OPERACIONAL' ? '🚘' : '🔒'}</span>
+                                <h2 className="font-bold text-xl text-slate-700 mb-2">{userRole === 'OPERACIONAL' ? 'Selecione uma Viatura' : 'Ação Não Permitida'}</h2>
+                                <p className="text-sm">
+                                    {userRole === 'OPERACIONAL' 
+                                        ? 'Para registar uma Ordem de Serviço, selecione a matrícula da viatura no menu acima.' 
+                                        : 'Para registar abastecimentos, ordens de serviço ou criar alertas, selecione um veículo específico no menu superior.'}
+                                </p>
+                                {userRole === 'GESTOR' && <button onClick={() => setView('dashboard')} className="mt-6 text-blue-600 font-bold border border-blue-600 px-4 py-2 rounded-lg">Voltar ao Painel</button>}
                             </div>
                         )}
 
                         {/* CONTEÚDO PRINCIPAL DAS VIEWS */}
-                        {!showCadastro && veiculos.length > 0 && ((!isGlobal) || (isGlobal && (view === 'dashboard' || view === 'historico'))) && (
+                        {!showCadastro && veiculos.length > 0 && ((!isGlobal) || (isGlobal && userRole === 'GESTOR' && (view === 'dashboard' || view === 'historico'))) && (
                             <div className="p-4 space-y-4 mb-16">
                                 
-                                {/* VIEW: DASHBOARD */}
-                                {view === 'dashboard' && (
+                                {/* VIEW: DASHBOARD (SÓ GESTOR) */}
+                                {view === 'dashboard' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         <div className="bg-slate-800 text-white p-4 rounded-2xl shadow-sm flex flex-col gap-3">
                                             <div className="flex justify-between items-center border-b border-slate-700 pb-3">
@@ -518,8 +590,8 @@
                                     </div>
                                 )}
 
-                                {/* VIEW: LEMBRETES CONFIGURAÇÃO */}
-                                {view === 'lembretes' && !isGlobal && (
+                                {/* VIEW: LEMBRETES CONFIGURAÇÃO (SÓ GESTOR) */}
+                                {view === 'lembretes' && !isGlobal && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">🔔 Configurar Alertas</h2>
                                         
@@ -586,8 +658,8 @@
                                     </div>
                                 )}
 
-                                {/* VIEW: ABASTECIMENTO */}
-                                {view === 'abastecimento' && !isGlobal && (
+                                {/* VIEW: ABASTECIMENTO (SÓ GESTOR) */}
+                                {view === 'abastecimento' && !isGlobal && userRole === 'GESTOR' && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
                                             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
@@ -619,7 +691,7 @@
                                     </div>
                                 )}
 
-                                {/* VIEW: ORDEM DE SERVIÇO */}
+                                {/* VIEW: ORDEM DE SERVIÇO (GESTOR E OPERACIONAL) */}
                                 {view === 'os' && !isGlobal && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
@@ -664,8 +736,9 @@
                                             <input className="w-full border p-3 rounded-xl" placeholder="Oficina / Fornecedor" value={novaDespesa.fornecedor} onChange={e => setNovaDespesa({...novaDespesa, fornecedor: e.target.value})} />
                                             <textarea rows="2" className="w-full border p-3 rounded-xl outline-none" placeholder="Descrição do Serviço realizado..." value={novaDespesa.descricao} onChange={e => setNovaDespesa({...novaDespesa, descricao: e.target.value})}></textarea>
                                             
+                                            {/* Secção Financeira - Oculta os inputs financeiros para o Operacional, a menos que ele saiba. Vamos deixar visível mas opcional */}
                                             <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl mt-2">
-                                                <h3 className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">💳 Valores Financeiros</h3>
+                                                <h3 className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">💳 Valores Financeiros {userRole === 'OPERACIONAL' && '(Opcional)'}</h3>
                                                 <div className="grid grid-cols-2 gap-2">
                                                     <input type="number" className="w-full border p-2 rounded-lg text-sm bg-white" placeholder="Mão de Obra (R$)" value={novaDespesa.valorMaoObra} onChange={e=>setNovaDespesa({...novaDespesa, valorMaoObra: e.target.value})} />
                                                     <input type="number" className="w-full border p-2 rounded-lg text-sm bg-white" placeholder="Peças (R$)" value={novaDespesa.valorPecas} onChange={e=>setNovaDespesa({...novaDespesa, valorPecas: e.target.value})} />
@@ -693,8 +766,8 @@
                                     </div>
                                 )}
 
-                                {/* VIEW: HISTÓRICO E RELATÓRIOS */}
-                                {view === 'historico' && (
+                                {/* VIEW: HISTÓRICO E RELATÓRIOS (SÓ GESTOR) */}
+                                {view === 'historico' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         <div className="flex justify-between items-center">
                                             <h2 className="text-xl font-bold text-slate-800">🧾 Histórico da Frota</h2>
@@ -752,7 +825,7 @@
                                                         
                                                         <div className="flex gap-4">
                                                             <button onClick={() => handleEditDespesa(d)} className="text-amber-600 text-xs font-bold underline hover:text-amber-800">Editar</button>
-                                                            <button onClick={() => removerDespesa(d)} className="text-red-500 text-xs font-bold underline hover:text-red-700">Eliminar</button>
+                                                            <button onClick={() => removerDespesa(d)} className="text-red-500 text-xs font-bold underline hover:text-red-700">Excluir</button>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -763,36 +836,48 @@
                             </div>
                         )}
                         
-                        {/* MENU INFERIOR */}
+                        {/* MENU INFERIOR - RENDERIZAÇÃO CONDICIONAL POR PERFIL */}
                         {!showCadastro && veiculos.length > 0 && (
                             <div className="fixed md:absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 px-1 py-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 overflow-x-auto hide-scroll">
-                                <div className="flex justify-between items-center min-w-full gap-1">
-                                    <button onClick={() => { setView('dashboard'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'dashboard' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
-                                        <span className="text-xl mb-0.5">🏠</span>
-                                        <span className="text-[9px] font-bold uppercase tracking-tighter">Painel</span>
-                                    </button>
-                                    <button onClick={() => { setView('lembretes'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'lembretes' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
-                                        <span className="text-xl mb-0.5">🔔</span>
-                                        <span className="text-[9px] font-bold uppercase tracking-tighter">Alertas</span>
-                                    </button>
-                                    <button onClick={() => { setView('abastecimento'); if(editingDespesaIndex === null) setNovaDespesa({...novaDespesa, categoria: 'Abastecimento', situacao: 'Concluída'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
-                                        <span className="text-xl mb-0.5">⛽</span>
-                                        <span className="text-[9px] font-bold uppercase tracking-tighter">Posto</span>
-                                    </button>
-                                    <button onClick={() => { setView('os'); if(editingDespesaIndex === null) setNovaDespesa({...novaDespesa, categoria: 'Mecânica / Manutenção', situacao: 'Concluída'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'os' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
-                                        <span className="text-xl mb-0.5">🔧</span>
-                                        <span className="text-[9px] font-bold uppercase tracking-tighter">O.S.</span>
-                                    </button>
-                                    <button onClick={() => { setView('historico'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'historico' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
-                                        <span className="text-xl mb-0.5">🧾</span>
-                                        <span className="text-[9px] font-bold uppercase tracking-tighter">Histórico</span>
-                                    </button>
-                                </div>
+                                
+                                {userRole === 'GESTOR' ? (
+                                    /* MENU COMPLETO DO GESTOR */
+                                    <div className="flex justify-between items-center min-w-full gap-1">
+                                        <button onClick={() => { setView('dashboard'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'dashboard' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">🏠</span>
+                                            <span className="text-[9px] font-bold uppercase tracking-tighter">Painel</span>
+                                        </button>
+                                        <button onClick={() => { setView('lembretes'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'lembretes' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">🔔</span>
+                                            <span className="text-[9px] font-bold uppercase tracking-tighter">Alertas</span>
+                                        </button>
+                                        <button onClick={() => { setView('abastecimento'); if(editingDespesaIndex === null) setNovaDespesa({...novaDespesa, categoria: 'Abastecimento', situacao: 'Concluída'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">⛽</span>
+                                            <span className="text-[9px] font-bold uppercase tracking-tighter">Posto</span>
+                                        </button>
+                                        <button onClick={() => { setView('os'); if(editingDespesaIndex === null) setNovaDespesa({...novaDespesa, categoria: 'Mecânica / Manutenção', situacao: 'Concluída'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'os' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">🔧</span>
+                                            <span className="text-[9px] font-bold uppercase tracking-tighter">O.S.</span>
+                                        </button>
+                                        <button onClick={() => { setView('historico'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'historico' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">🧾</span>
+                                            <span className="text-[9px] font-bold uppercase tracking-tighter">Histórico</span>
+                                        </button>
+                                    </div>
+                                ) : (
+                                    /* MENU SIMPLIFICADO DO OPERACIONAL */
+                                    <div className="flex justify-center items-center min-w-full gap-1">
+                                        <button className="w-full flex flex-col items-center justify-center p-2 rounded-xl text-blue-700 bg-blue-50 cursor-default">
+                                            <span className="text-xl mb-0.5">🔧</span>
+                                            <span className="text-[10px] font-bold uppercase tracking-tighter">Formulário de O.S.</span>
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
 
-                    {/* PDF INVISÍVEL */}
+                    {/* PDF INVISÍVEL (Mantido apenas para o Gestor) */}
                     <div id="pdf-content" style={{ display: 'none', width: '100%', backgroundColor: 'white', color: 'black', fontFamily: 'Arial', padding: '10px' }}>
                         <div className="bg-slate-800 text-white rounded-lg p-2 mb-3 text-center">
                             <h1 className="text-xl font-bold uppercase">{isGlobal ? 'Dossiê Consolidado RUBI FROTA' : 'Dossiê de Manutenção'}</h1>
@@ -861,12 +946,5 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ControleFrotaMulti />);
     </script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./service-worker.js');
-            });
-        }
-    </script>
 </body>
-    </html>
+</html>
