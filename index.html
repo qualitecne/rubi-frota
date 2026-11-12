@@ -11,7 +11,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     
-    <!-- NOVO: Biblioteca Gráfica (Chart.js) -->
+    <!-- Biblioteca Gráfica (Chart.js) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <link rel="manifest" href="manifest.json">
@@ -38,9 +38,7 @@
 
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7N4C1lZperjJZiDlk_SPDEl4OlfvuvbjdePeWKa-qr2ojbu4kmL862ntMjjcZNPrPQQ/exec';
 
-        // ==========================================
         // COMPONENTE DE GRÁFICOS (CHART.JS WRAPPER)
-        // ==========================================
         const ChartWrapper = ({ type, data, options }) => {
             const canvasRef = useRef(null);
             const chartInstance = useRef(null);
@@ -56,7 +54,7 @@
         };
 
         function ControleFrotaMulti() {
-            // ESTADOS DA APLICAÇÃO
+            // 1. ESTADOS (HOOKS) NO TOPO ABSOLUTO
             const [userRole, setUserRole] = useState(null); 
             const [veiculos, setVeiculos] = useState([]);
             const [veiculoAtivo, setVeiculoAtivo] = useState('TODOS'); 
@@ -93,13 +91,77 @@
             const [novaRotaGestor, setNovaRotaGestor] = useState({ origem: '', destino: '', observacoes: '' });
             const [execucaoRota, setExecucaoRota] = useState(null);
 
-            // CARREGAMENTO INICIAL
+            // 2. VARIÁVEIS BASE PARA OS GRÁFICOS (Garantir que existem antes do useMemo)
+            const isGlobal = veiculoAtivo === 'TODOS';
+            const veiculoAtual = isGlobal ? null : veiculos.find(v => v.placa === veiculoAtivo);
+            const kmAtualNum = veiculoAtual ? parseFloat(veiculoAtual.kmAtual) || 0 : 0;
+            const despesasIniciais = isGlobal ? despesas.slice().reverse() : despesas.filter(d => d.placa === veiculoAtivo).reverse();
+
+            // 3. PREPARAÇÃO DOS DADOS GRÁFICOS (USEMEMO)
+            const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b', '#0ea5e9'];
+            
+            const dataPorCategoria = useMemo(() => {
+                const map = {};
+                despesasIniciais.forEach(d => { map[d.categoria] = (map[d.categoria] || 0) + (parseFloat(d.valor) || 0); });
+                return { labels: Object.keys(map), datasets: [{ data: Object.values(map), backgroundColor: coresGrafico, borderWidth: 1 }] };
+            }, [despesasIniciais]);
+
+            const dataEvolucaoMensal = useMemo(() => {
+                const map = {};
+                despesasIniciais.forEach(d => {
+                    if(!d.data) return;
+                    const mes = d.data.substring(0, 7);
+                    map[mes] = (map[mes] || 0) + (parseFloat(d.valor) || 0);
+                });
+                const sortedKeys = Object.keys(map).sort();
+                return { labels: sortedKeys, datasets: [{ label: 'Gasto Mensal (R$)', data: sortedKeys.map(k => map[k]), backgroundColor: '#3b82f6', borderRadius: 4 }] };
+            }, [despesasIniciais]);
+
+            const dataRankingVeiculos = useMemo(() => {
+                if(!isGlobal) return null;
+                const map = {};
+                despesasIniciais.forEach(d => { map[d.placa] = (map[d.placa] || 0) + (parseFloat(d.valor) || 0); });
+                const sorted = Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 10);
+                return { labels: sorted.map(i => i[0]), datasets: [{ label: 'Custo Total', data: sorted.map(i => i[1]), backgroundColor: '#f59e0b', borderRadius: 4 }] };
+            }, [despesasIniciais, isGlobal]);
+
+            const dataConsumo = useMemo(() => {
+                if(isGlobal) return null;
+                const abs = despesasIniciais
+                    .filter(d => d.categoria === 'Abastecimento' && (d.descricao && d.descricao.includes('L a')))
+                    .sort((a, b) => new Date(a.data) - new Date(b.data));
+                const labels = [];
+                const data = [];
+                for(let i = 1; i < abs.length; i++) {
+                    const kmAtual = parseFloat(abs[i].km);
+                    const kmAnterior = parseFloat(abs[i-1].km);
+                    const match = abs[i].descricao.match(/\[(.*?)L a/);
+                    const litros = match ? parseFloat(match[1]) : 0;
+                    if(kmAtual > kmAnterior && litros > 0) {
+                        const kml = (kmAtual - kmAnterior) / litros;
+                        if(kml > 0 && kml < 30) {
+                            labels.push(abs[i].data);
+                            data.push(kml.toFixed(2));
+                        }
+                    }
+                }
+                return { labels, datasets: [{ label: 'KM por Litro', data, borderColor: '#10b981', backgroundColor: '#10b981', tension: 0.3, fill: false }] };
+            }, [despesasIniciais, isGlobal]);
+
+            const dataPecasMO = useMemo(() => {
+                if(isGlobal) return null;
+                let mo = 0, pecas = 0;
+                despesasIniciais.forEach(d => {
+                    mo += (parseFloat(d.valorMaoObra) || 0);
+                    pecas += (parseFloat(d.valorPecas) || 0);
+                });
+                return { labels: ['Mão de Obra', 'Peças'], datasets: [{ data: [mo, pecas], backgroundColor: ['#8b5cf6', '#ef4444'] }] };
+            }, [despesasIniciais, isGlobal]);
+
+            // 4. EFEITOS (USEEFFECT)
             useEffect(() => {
                 const savedRole = localStorage.getItem('rubi_frota_role');
-                if (savedRole) {
-                    setUserRole(savedRole);
-                    if (savedRole === 'OPERACIONAL') setView('rotas');
-                }
+                if (savedRole) { setUserRole(savedRole); if (savedRole === 'OPERACIONAL') setView('rotas'); }
                 carregarDaNuvem();
             }, []);
 
@@ -113,7 +175,7 @@
                 }
             }, [view, veiculoAtivo, editingDespesaIndex]);
 
-            // FUNÇÕES DE NUVEM
+            // 5. FUNÇÕES DE NUVEM
             const carregarDaNuvem = async () => {
                 setSyncStatus('⏳ A puxar...');
                 try {
@@ -151,9 +213,7 @@
                     const result = await response.json();
                     if (result.status === 'sucesso') setSyncStatus('☁️ OK');
                     else setSyncStatus('⚠️ Erro Sync');
-                } catch (error) {
-                    setSyncStatus('⚠️ Offline');
-                }
+                } catch (error) { setSyncStatus('⚠️ Offline'); }
             };
 
             const exportarBackup = () => {
@@ -179,14 +239,12 @@
                         if (parsed.rotas) setRotas(parsed.rotas);
                         salvarNaNuvem(parsed.veiculos || [], parsed.despesas || [], parsed.lembretes || [], parsed.rotas || []);
                         alert("✅ Backup restaurado com sucesso!");
-                    } catch(err) {
-                        alert("❌ Arquivo de backup inválido!");
-                    }
+                    } catch(err) { alert("❌ Arquivo de backup inválido!"); }
                 };
                 reader.readAsText(file);
             };
 
-            // ECRÃ DE LOGIN
+            // 6. BARREIRA DE LOGIN
             if (!userRole) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6 animate-fade-in">
@@ -213,13 +271,7 @@
                 );
             }
 
-            // VARIÁVEIS COMPUTADAS E FILTROS
-            const isGlobal = veiculoAtivo === 'TODOS';
-            const veiculoAtual = isGlobal ? null : veiculos.find(v => v.placa === veiculoAtivo);
-            const kmAtualNum = veiculoAtual ? parseFloat(veiculoAtual.kmAtual) || 0 : 0;
-            
-            const despesasIniciais = isGlobal ? despesas.slice().reverse() : despesas.filter(d => d.placa === veiculoAtivo).reverse();
-            
+            // 7. RESTANTES FILTROS E LÓGICA (Executados APÓS o Login)
             const despesasFiltradas = despesasIniciais.filter(d => 
                 (d.categoria && d.categoria.toLowerCase().includes(searchTerm.toLowerCase())) || 
                 (d.fornecedor && d.fornecedor.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -230,124 +282,15 @@
             const lembretesFiltrados = isGlobal ? lembretes : lembretes.filter(l => l.placa === veiculoAtivo);
             const rotasFiltradas = isGlobal ? rotas.slice().reverse() : rotas.filter(r => r.placa === veiculoAtivo).reverse();
             const totalGasto = despesasIniciais.reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0);
-
             const formatCurrency = (val) => isNaN(parseFloat(val)) ? 'R$ 0,00' : parseFloat(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-            const getKmAtual = (placa) => {
-                const v = veiculos.find(ve => ve.placa === placa);
-                return v ? parseFloat(v.kmAtual) || 0 : 0;
-            };
-
+            const getKmAtual = (placa) => { const v = veiculos.find(ve => ve.placa === placa); return v ? parseFloat(v.kmAtual) || 0 : 0; };
             const atualizarKmVeiculo = (novoKmInformado, placaVeiculo) => {
                 const novoKm = parseFloat(novoKmInformado);
                 const veiculoAlvo = veiculos.find(v => v.placa === placaVeiculo);
-                if (veiculoAlvo && novoKm > (parseFloat(veiculoAlvo.kmAtual) || 0)) {
-                    return veiculos.map(v => v.placa === placaVeiculo ? { ...v, kmAtual: novoKm } : v);
-                }
+                if (veiculoAlvo && novoKm > (parseFloat(veiculoAlvo.kmAtual) || 0)) { return veiculos.map(v => v.placa === placaVeiculo ? { ...v, kmAtual: novoKm } : v); }
                 return veiculos;
             };
 
-            // ==========================================
-            // PREPARAÇÃO DE DADOS PARA OS GRÁFICOS
-            // ==========================================
-            const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b', '#0ea5e9'];
-            
-            // GLOBAL: 1. Custos por Categoria
-            const dataPorCategoria = useMemo(() => {
-                const map = {};
-                despesasIniciais.forEach(d => { map[d.categoria] = (map[d.categoria] || 0) + (parseFloat(d.valor) || 0); });
-                return {
-                    labels: Object.keys(map),
-                    datasets: [{ data: Object.values(map), backgroundColor: coresGrafico, borderWidth: 1 }]
-                };
-            }, [despesasIniciais]);
-
-            // GLOBAL: 2. Evolução Mensal (Últimos 6 meses)
-            const dataEvolucaoMensal = useMemo(() => {
-                const map = {};
-                despesasIniciais.forEach(d => {
-                    if(!d.data) return;
-                    const mes = d.data.substring(0, 7); // YYYY-MM
-                    map[mes] = (map[mes] || 0) + (parseFloat(d.valor) || 0);
-                });
-                const sortedKeys = Object.keys(map).sort();
-                return {
-                    labels: sortedKeys,
-                    datasets: [{
-                        label: 'Gasto Mensal',
-                        data: sortedKeys.map(k => map[k]),
-                        backgroundColor: '#3b82f6',
-                        borderRadius: 4
-                    }]
-                };
-            }, [despesasIniciais]);
-
-            // GLOBAL: 3. Ranking de Veículos (Top 10)
-            const dataRankingVeiculos = useMemo(() => {
-                if(!isGlobal) return null;
-                const map = {};
-                despesasIniciais.forEach(d => { map[d.placa] = (map[d.placa] || 0) + (parseFloat(d.valor) || 0); });
-                const sorted = Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 10);
-                return {
-                    labels: sorted.map(i => i[0]),
-                    datasets: [{ label: 'Custo Total', data: sorted.map(i => i[1]), backgroundColor: '#f59e0b', borderRadius: 4 }]
-                };
-            }, [despesasIniciais, isGlobal]);
-
-            // INDIVIDUAL: 1. Evolução do Consumo (KM/L)
-            const dataConsumo = useMemo(() => {
-                if(isGlobal) return null;
-                // Filtra abastecimentos que têm litros preenchidos, ordenados cronologicamente
-                const abs = despesasIniciais
-                    .filter(d => d.categoria === 'Abastecimento' && (d.descricao && d.descricao.includes('L a')))
-                    .sort((a, b) => new Date(a.data) - new Date(b.data));
-                
-                const labels = [];
-                const data = [];
-                
-                // O consumo é calculado entre um abastecimento e o anterior
-                for(let i = 1; i < abs.length; i++) {
-                    const kmAtual = parseFloat(abs[i].km);
-                    const kmAnterior = parseFloat(abs[i-1].km);
-                    
-                    // Extrair litros da descrição "[40L a R$5/L]"
-                    const match = abs[i].descricao.match(/\[(.*?)L a/);
-                    const litros = match ? parseFloat(match[1]) : 0;
-                    
-                    if(kmAtual > kmAnterior && litros > 0) {
-                        const kml = (kmAtual - kmAnterior) / litros;
-                        if(kml > 0 && kml < 30) { // Filtro de sanidade
-                            labels.push(abs[i].data);
-                            data.push(kml.toFixed(2));
-                        }
-                    }
-                }
-                
-                return {
-                    labels,
-                    datasets: [{
-                        label: 'KM por Litro',
-                        data, borderColor: '#10b981', backgroundColor: '#10b981', tension: 0.3, fill: false
-                    }]
-                };
-            }, [despesasIniciais, isGlobal]);
-
-            // INDIVIDUAL: 2. Peças vs Mão de Obra
-            const dataPecasMO = useMemo(() => {
-                if(isGlobal) return null;
-                let mo = 0, pecas = 0;
-                despesasIniciais.forEach(d => {
-                    mo += (parseFloat(d.valorMaoObra) || 0);
-                    pecas += (parseFloat(d.valorPecas) || 0);
-                });
-                return {
-                    labels: ['Mão de Obra', 'Peças'],
-                    datasets: [{ data: [mo, pecas], backgroundColor: ['#8b5cf6', '#ef4444'] }]
-                };
-            }, [despesasIniciais, isGlobal]);
-
-
-            // FUNÇÕES DE AÇÃO PRINCIPAIS
             const handleAddVeiculo = () => {
                 if (!novoVeiculo.veiculo || !novoVeiculo.placa) return alert('Veículo e Matrícula/Placa são obrigatórios!');
                 const placaUpper = novoVeiculo.placa.toUpperCase();
@@ -379,7 +322,6 @@
             const handleAddDespesa = () => {
                 if (isGlobal) return alert('Selecione uma viatura específica.');
                 let valorFinal = novaDespesa.valor;
-                
                 let descricaoFinal = novaDespesa.descricao;
                 if (view === 'abastecimento') {
                     if (novaDespesa.litros && novaDespesa.precoLitro) {
@@ -387,32 +329,21 @@
                         descricaoFinal = descricaoFinal ? `${resumo} ${descricaoFinal}` : resumo;
                     }
                 }
-
                 if (view === 'os') {
                     const totalOS = (parseFloat(novaDespesa.valorMaoObra) || 0) + (parseFloat(novaDespesa.valorPecas) || 0);
                     if (totalOS <= 0 && novaDespesa.situacao === 'Concluída' && userRole === 'GESTOR') return setFormError('Informe os valores para O.S. Concluída.');
                     valorFinal = totalOS > 0 ? totalOS.toFixed(2) : '0.00';
                 }
-                
                 if (!novaDespesa.data) return setFormError('A data é obrigatória.');
                 setFormError('');
 
                 let novosVeiculos = veiculos;
-                if (novaDespesa.km) {
-                    novosVeiculos = atualizarKmVeiculo(novaDespesa.km, veiculoAtivo);
-                    setVeiculos(novosVeiculos);
-                }
-
+                if (novaDespesa.km) { novosVeiculos = atualizarKmVeiculo(novaDespesa.km, veiculoAtivo); setVeiculos(novosVeiculos); }
                 let novasDespesas = [...despesas];
                 const registoPronto = { ...novaDespesa, valor: valorFinal, descricao: descricaoFinal, placa: veiculoAtivo };
                 
-                if (editingDespesaIndex !== null) {
-                    novasDespesas[editingDespesaIndex] = registoPronto;
-                    alert('✅ Registo atualizado!');
-                } else {
-                    novasDespesas = [...despesas, registoPronto];
-                    alert('✅ Registo guardado com sucesso!');
-                }
+                if (editingDespesaIndex !== null) { novasDespesas[editingDespesaIndex] = registoPronto; alert('✅ Registo atualizado!'); } 
+                else { novasDespesas = [...despesas, registoPronto]; alert('✅ Registo guardado com sucesso!'); }
 
                 setDespesas(novasDespesas);
                 salvarNaNuvem(novosVeiculos, novasDespesas, lembretes, rotas);
@@ -438,43 +369,27 @@
                 }
             };
 
-            // UPLOAD PARA O GOOGLE DRIVE
             const handleImageUpload = async (e) => {
                 const arquivos = Array.from(e.target.files);
                 if (arquivos.length === 0) return;
                 setIsUploading(true);
                 setFormError('');
-
                 const uploadPromises = arquivos.map(file => {
                     return new Promise((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onload = event => {
                             const isPDF = file.type === 'application/pdf';
-                            
                             if (isPDF) {
-                                const base64Data = event.target.result;
-                                fetch(SCRIPT_URL, {
-                                    method: 'POST',
-                                    body: JSON.stringify({ action: 'upload_imagem', base64: base64Data, nomeArquivo: `DOC_${Date.now()}.pdf`, mimeType: 'application/pdf' })
-                                }).then(res => res.json()).then(result => {
-                                    if (result.status === 'sucesso') resolve(result.url); else reject();
-                                }).catch(() => reject());
+                                fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'upload_imagem', base64: event.target.result, nomeArquivo: `DOC_${Date.now()}.pdf`, mimeType: 'application/pdf' }) })
+                                .then(res => res.json()).then(result => { if (result.status === 'sucesso') resolve(result.url); else reject(); }).catch(() => reject());
                             } else {
                                 const img = new Image();
                                 img.onload = async () => {
-                                    const canvas = document.createElement('canvas');
-                                    const ctx = canvas.getContext('2d');
-                                    let w = img.width, h = img.height;
-                                    if (w > 1200) { h *= 1200 / w; w = 1200; }
-                                    canvas.width = w; canvas.height = h;
-                                    ctx.drawImage(img, 0, 0, w, h);
-                                    const base64Data = canvas.toDataURL('image/jpeg', 0.7);
-                                    fetch(SCRIPT_URL, {
-                                        method: 'POST',
-                                        body: JSON.stringify({ action: 'upload_imagem', base64: base64Data, nomeArquivo: `FOTO_${Date.now()}.jpg`, mimeType: 'image/jpeg' })
-                                    }).then(res => res.json()).then(result => {
-                                        if (result.status === 'sucesso') resolve(result.url); else reject();
-                                    }).catch(() => reject());
+                                    const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
+                                    let w = img.width, h = img.height; if (w > 1200) { h *= 1200 / w; w = 1200; }
+                                    canvas.width = w; canvas.height = h; ctx.drawImage(img, 0, 0, w, h);
+                                    fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'upload_imagem', base64: canvas.toDataURL('image/jpeg', 0.7), nomeArquivo: `FOTO_${Date.now()}.jpg`, mimeType: 'image/jpeg' }) })
+                                    .then(res => res.json()).then(result => { if (result.status === 'sucesso') resolve(result.url); else reject(); }).catch(() => reject());
                                 };
                                 img.src = event.target.result;
                             }
@@ -482,18 +397,12 @@
                         reader.readAsDataURL(file);
                     });
                 });
-
                 try {
                     const uploadedUrls = await Promise.all(uploadPromises);
                     setNovaDespesa(prev => ({ ...prev, anexos: [...(prev.anexos || []), ...uploadedUrls] }));
-                } catch (err) {
-                    setFormError('Erro ao carregar ficheiro. Tente novamente.');
-                } finally {
-                    setIsUploading(false);
-                }
+                } catch (err) { setFormError('Erro ao carregar ficheiro. Tente novamente.'); } finally { setIsUploading(false); }
             };
 
-            // OUTRAS FUNÇÕES: Lembretes e Rotas
             const handleAddLembrete = () => {
                 if (isGlobal) return alert('Selecione uma viatura específica.');
                 if (!novoLembrete.freqKm && !novoLembrete.freqMeses) return alert('Indique a frequência em KM ou Meses.');
@@ -514,11 +423,7 @@
             const handleCriarRota = () => {
                 if(isGlobal) return alert('Selecione uma viatura para delegar a rota.');
                 if(!novaRotaGestor.origem || !novaRotaGestor.destino) return alert('Origem e destino são obrigatórios.');
-                const novaRota = {
-                    id: Date.now(), placa: veiculoAtivo, status: 'Pendente',
-                    origem: novaRotaGestor.origem, destino: novaRotaGestor.destino, observacoes: novaRotaGestor.observacoes,
-                    data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: ''
-                };
+                const novaRota = { id: Date.now(), placa: veiculoAtivo, status: 'Pendente', origem: novaRotaGestor.origem, destino: novaRotaGestor.destino, observacoes: novaRotaGestor.observacoes, data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: '' };
                 const novasRotas = [...rotas, novaRota];
                 setRotas(novasRotas);
                 salvarNaNuvem(veiculos, despesas, lembretes, novasRotas);
@@ -535,20 +440,12 @@
                 setExecucaoRota({ ...rota, data: new Date().toISOString().split('T')[0], kmInicial: kmAtualNum });
             };
 
-            const handleSalvarRascunhoRota = () => {
-                localStorage.setItem('rubi_frota_rascunho_rota', JSON.stringify(execucaoRota));
-                alert('💾 Rascunho da viagem salvo!');
-            };
+            const handleSalvarRascunhoRota = () => { localStorage.setItem('rubi_frota_rascunho_rota', JSON.stringify(execucaoRota)); alert('💾 Rascunho da viagem salvo!'); };
 
             const handleConcluirRota = () => {
-                if(!execucaoRota.data || !execucaoRota.kmInicial || !execucaoRota.kmFinal || !execucaoRota.motorista) {
-                    return setFormError('Data, Motorista, KM Inicial e Final são obrigatórios.');
-                }
-                if(parseFloat(execucaoRota.kmFinal) <= parseFloat(execucaoRota.kmInicial)) {
-                    return setFormError('O KM Final deve ser maior que o KM Inicial.');
-                }
+                if(!execucaoRota.data || !execucaoRota.kmInicial || !execucaoRota.kmFinal || !execucaoRota.motorista) return setFormError('Data, Motorista, KM Inicial e Final são obrigatórios.');
+                if(parseFloat(execucaoRota.kmFinal) <= parseFloat(execucaoRota.kmInicial)) return setFormError('O KM Final deve ser maior que o KM Inicial.');
                 setFormError('');
-
                 const novosVeiculos = atualizarKmVeiculo(execucaoRota.kmFinal, veiculoAtivo);
                 setVeiculos(novosVeiculos);
                 const novasRotas = rotas.map(r => r.id === execucaoRota.id ? { ...r, status: 'Concluída', ...execucaoRota } : r);
@@ -619,7 +516,7 @@
                 }).catch(() => setIsGenerating(false));
             };
 
-            // RENDERIZAÇÃO DA INTERFACE PRINCIPAL
+            // RENDERIZAÇÃO DA INTERFACE
             return (
                 <div className="min-h-screen font-sans text-slate-800 pb-24 md:pb-10 max-w-md md:max-w-4xl mx-auto md:mt-4 shadow-xl bg-white md:rounded-3xl overflow-hidden relative border border-slate-200">
                     
@@ -699,7 +596,7 @@
                                 {view === 'dashboard' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         
-                                        {/* Ações de Backup na Visão Global */}
+                                        {/* Ações de Backup */}
                                         {isGlobal && (
                                             <div className="flex justify-between items-center bg-slate-50 border border-slate-200 p-2 rounded-xl">
                                                 <span className="text-[10px] font-bold text-slate-500 px-2">SEGURANÇA (JSON)</span>
@@ -732,7 +629,7 @@
                                             </div>
                                         </div>
 
-                                        {/* ======================= SEÇÃO DE GRÁFICOS ======================= */}
+                                        {/* GRÁFICOS */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             {isGlobal && dataPorCategoria && dataPorCategoria.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
@@ -740,28 +637,24 @@
                                                     <ChartWrapper type="doughnut" data={dataPorCategoria} options={{ responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: {size: 10} } } } }} />
                                                 </div>
                                             )}
-                                            
                                             {isGlobal && dataRankingVeiculos && dataRankingVeiculos.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Top 10 Custos por Viatura</h3>
                                                     <ChartWrapper type="bar" data={dataRankingVeiculos} options={{ indexAxis: 'y', responsive: true, plugins: { legend: { display: false } } }} />
                                                 </div>
                                             )}
-
                                             {isGlobal && dataEvolucaoMensal && dataEvolucaoMensal.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Evolução Mensal de Gastos</h3>
                                                     <ChartWrapper type="bar" data={dataEvolucaoMensal} options={{ responsive: true }} />
                                                 </div>
                                             )}
-
                                             {!isGlobal && dataConsumo && dataConsumo.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Evolução de Consumo (KM/L)</h3>
                                                     <ChartWrapper type="line" data={dataConsumo} options={{ responsive: true, scales: { y: { beginAtZero: false } } }} />
                                                 </div>
                                             )}
-
                                             {!isGlobal && dataPecasMO && dataPecasMO.datasets[0].data[0] > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Custo de Manutenção</h3>
@@ -769,7 +662,6 @@
                                                 </div>
                                             )}
                                         </div>
-                                        {/* ================================================================= */}
 
                                         {isGlobal ? (
                                             <div className="mt-2">
@@ -840,7 +732,7 @@
                                     </div>
                                 )}
 
-                                {/* 2. ROTAS (GESTOR E OPERACIONAL) */}
+                                {/* 2. ROTAS */}
                                 {view === 'rotas' && !isGlobal && (
                                     <div className="animate-fade-in space-y-4">
                                         {userRole === 'GESTOR' && (
@@ -1102,9 +994,6 @@
                                         </button>
                                         <button onClick={() => { setView('historico'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'historico' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🧾</span><span className="text-[9px] font-bold uppercase">Histórico</span>
-                                        </button>
-                                        <button onClick={() => { setView('lembretes'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'lembretes' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
-                                            <span className="text-xl mb-0.5">🔔</span><span className="text-[9px] font-bold uppercase">Alertas</span>
                                         </button>
                                     </div>
                                 ) : (
