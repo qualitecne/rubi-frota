@@ -10,7 +10,8 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <!-- Biblioteca de Gráficos -->
+    
+    <!-- NOVO: Biblioteca Gráfica (Chart.js) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <link rel="manifest" href="manifest.json">
@@ -33,34 +34,26 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useRef, useMemo } = React;
 
-        // COMPONENTE DE GRÁFICO (CHART.JS)
-        function ChartComponent({ type, data, options, height = '250px' }) {
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7N4C1lZperjJZiDlk_SPDEl4OlfvuvbjdePeWKa-qr2ojbu4kmL862ntMjjcZNPrPQQ/exec';
+
+        // ==========================================
+        // COMPONENTE DE GRÁFICOS (CHART.JS WRAPPER)
+        // ==========================================
+        const ChartWrapper = ({ type, data, options }) => {
             const canvasRef = useRef(null);
             const chartInstance = useRef(null);
 
             useEffect(() => {
-                if (chartInstance.current) {
-                    chartInstance.current.destroy();
-                }
+                if (chartInstance.current) chartInstance.current.destroy();
                 const ctx = canvasRef.current.getContext('2d');
                 chartInstance.current = new window.Chart(ctx, { type, data, options });
-                
-                return () => {
-                    if (chartInstance.current) chartInstance.current.destroy();
-                };
-            }, [data, type, options]);
+                return () => { if (chartInstance.current) chartInstance.current.destroy(); };
+            }, [type, data, options]);
 
-            return (
-                <div style={{ height, width: '100%', position: 'relative' }}>
-                    <canvas ref={canvasRef}></canvas>
-                </div>
-            );
-        }
-
-        // URL DA SUA API GOOGLE SHEETS
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7N4C1lZperjJZiDlk_SPDEl4OlfvuvbjdePeWKa-qr2ojbu4kmL862ntMjjcZNPrPQQ/exec';
+            return <canvas ref={canvasRef}></canvas>;
+        };
 
         function ControleFrotaMulti() {
             // ESTADOS DA APLICAÇÃO
@@ -110,7 +103,6 @@
                 carregarDaNuvem();
             }, []);
 
-            // VERIFICAÇÃO DE RASCUNHOS
             useEffect(() => {
                 if ((view === 'os' || view === 'abastecimento') && editingDespesaIndex === null && veiculoAtivo !== 'TODOS') {
                     const rascunhoStr = localStorage.getItem('rubi_frota_rascunho_despesa');
@@ -121,7 +113,7 @@
                 }
             }, [view, veiculoAtivo, editingDespesaIndex]);
 
-            // FUNÇÕES DE NUVEM E BACKUP
+            // FUNÇÕES DE NUVEM
             const carregarDaNuvem = async () => {
                 setSyncStatus('⏳ A puxar...');
                 try {
@@ -255,79 +247,104 @@
                 return veiculos;
             };
 
-            // DADOS PARA GRÁFICOS
-            const getChartOptions = (isPie = false) => ({
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: isPie ? 'right' : 'top', labels: { boxWidth: 12, font: { size: 10 } } }
-                }
-            });
-
-            // 1. Gráfico Global: Categorias
-            const catMap = {};
-            despesasIniciais.forEach(d => { catMap[d.categoria] = (catMap[d.categoria] || 0) + (parseFloat(d.valor) || 0); });
-            const dataChartCategorias = {
-                labels: Object.keys(catMap),
-                datasets: [{ data: Object.values(catMap), backgroundColor: ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#64748b'] }]
-            };
-
-            // 2. Gráfico Global: Evolução Mensal
-            const mesMap = {};
-            despesasIniciais.forEach(d => {
-                if(!d.data) return;
-                const mes = d.data.substring(0, 7);
-                mesMap[mes] = (mesMap[mes] || 0) + (parseFloat(d.valor) || 0);
-            });
-            const labelsMes = Object.keys(mesMap).sort();
-            const dataChartMensal = {
-                labels: labelsMes.map(m => { const [y, mm] = m.split('-'); return `${mm}/${y.substring(2)}`; }),
-                datasets: [{ label: 'Gastos Totais (R$)', data: labelsMes.map(m => mesMap[m]), backgroundColor: '#3b82f6', borderRadius: 4 }]
-            };
-
-            // 3. Gráfico Global: Ranking Viaturas
-            const viatMap = {};
-            despesasIniciais.forEach(d => { viatMap[d.placa] = (viatMap[d.placa] || 0) + (parseFloat(d.valor) || 0); });
-            const viatSorted = Object.keys(viatMap).sort((a,b) => viatMap[b] - viatMap[a]); // Ordem Decrescente
-            const dataChartViaturas = {
-                labels: viatSorted,
-                datasets: [{ label: 'Custo por Viatura (R$)', data: viatSorted.map(v => viatMap[v]), backgroundColor: '#f59e0b', borderRadius: 4 }]
-            };
-
-            // 4. Gráfico Individual: MO vs Peças
-            let totalMO = 0; let totalPecas = 0;
-            despesasIniciais.forEach(d => {
-                totalMO += parseFloat(d.valorMaoObra) || 0;
-                totalPecas += parseFloat(d.valorPecas) || 0;
-            });
-            const dataChartMO = {
-                labels: ['Mão de Obra', 'Peças'],
-                datasets: [{ data: [totalMO, totalPecas], backgroundColor: ['#3b82f6', '#10b981'] }]
-            };
-
-            // 5. Gráfico Individual: Consumo KM/L
-            const abastecimentosParaConsumo = despesasIniciais
-                .filter(d => d.categoria === 'Abastecimento' && d.km && (d.descricao && d.descricao.includes('L a R$')))
-                .sort((a,b) => parseFloat(a.km) - parseFloat(b.km));
+            // ==========================================
+            // PREPARAÇÃO DE DADOS PARA OS GRÁFICOS
+            // ==========================================
+            const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b', '#0ea5e9'];
             
-            const kmlLabels = [];
-            const kmlData = [];
-            for (let i = 1; i < abastecimentosParaConsumo.length; i++) {
-                const kmDiff = parseFloat(abastecimentosParaConsumo[i].km) - parseFloat(abastecimentosParaConsumo[i-1].km);
-                // Extrai os litros da descrição [XXL a R$YY/L]
-                const litrosMatch = abastecimentosParaConsumo[i].descricao.match(/\[([\d.]+)L/);
-                if (litrosMatch && kmDiff > 0) {
-                    const litros = parseFloat(litrosMatch[1]);
-                    if (litros > 0) {
-                        kmlLabels.push(abastecimentosParaConsumo[i].data.substring(5)); // Mês/Dia
-                        kmlData.push((kmDiff / litros).toFixed(2));
+            // GLOBAL: 1. Custos por Categoria
+            const dataPorCategoria = useMemo(() => {
+                const map = {};
+                despesasIniciais.forEach(d => { map[d.categoria] = (map[d.categoria] || 0) + (parseFloat(d.valor) || 0); });
+                return {
+                    labels: Object.keys(map),
+                    datasets: [{ data: Object.values(map), backgroundColor: coresGrafico, borderWidth: 1 }]
+                };
+            }, [despesasIniciais]);
+
+            // GLOBAL: 2. Evolução Mensal (Últimos 6 meses)
+            const dataEvolucaoMensal = useMemo(() => {
+                const map = {};
+                despesasIniciais.forEach(d => {
+                    if(!d.data) return;
+                    const mes = d.data.substring(0, 7); // YYYY-MM
+                    map[mes] = (map[mes] || 0) + (parseFloat(d.valor) || 0);
+                });
+                const sortedKeys = Object.keys(map).sort();
+                return {
+                    labels: sortedKeys,
+                    datasets: [{
+                        label: 'Gasto Mensal',
+                        data: sortedKeys.map(k => map[k]),
+                        backgroundColor: '#3b82f6',
+                        borderRadius: 4
+                    }]
+                };
+            }, [despesasIniciais]);
+
+            // GLOBAL: 3. Ranking de Veículos (Top 10)
+            const dataRankingVeiculos = useMemo(() => {
+                if(!isGlobal) return null;
+                const map = {};
+                despesasIniciais.forEach(d => { map[d.placa] = (map[d.placa] || 0) + (parseFloat(d.valor) || 0); });
+                const sorted = Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 10);
+                return {
+                    labels: sorted.map(i => i[0]),
+                    datasets: [{ label: 'Custo Total', data: sorted.map(i => i[1]), backgroundColor: '#f59e0b', borderRadius: 4 }]
+                };
+            }, [despesasIniciais, isGlobal]);
+
+            // INDIVIDUAL: 1. Evolução do Consumo (KM/L)
+            const dataConsumo = useMemo(() => {
+                if(isGlobal) return null;
+                // Filtra abastecimentos que têm litros preenchidos, ordenados cronologicamente
+                const abs = despesasIniciais
+                    .filter(d => d.categoria === 'Abastecimento' && (d.descricao && d.descricao.includes('L a')))
+                    .sort((a, b) => new Date(a.data) - new Date(b.data));
+                
+                const labels = [];
+                const data = [];
+                
+                // O consumo é calculado entre um abastecimento e o anterior
+                for(let i = 1; i < abs.length; i++) {
+                    const kmAtual = parseFloat(abs[i].km);
+                    const kmAnterior = parseFloat(abs[i-1].km);
+                    
+                    // Extrair litros da descrição "[40L a R$5/L]"
+                    const match = abs[i].descricao.match(/\[(.*?)L a/);
+                    const litros = match ? parseFloat(match[1]) : 0;
+                    
+                    if(kmAtual > kmAnterior && litros > 0) {
+                        const kml = (kmAtual - kmAnterior) / litros;
+                        if(kml > 0 && kml < 30) { // Filtro de sanidade
+                            labels.push(abs[i].data);
+                            data.push(kml.toFixed(2));
+                        }
                     }
                 }
-            }
-            const dataChartKML = {
-                labels: kmlLabels,
-                datasets: [{ label: 'Média KM/L', data: kmlData, borderColor: '#10b981', backgroundColor: '#10b981', tension: 0.3, fill: false }]
-            };
+                
+                return {
+                    labels,
+                    datasets: [{
+                        label: 'KM por Litro',
+                        data, borderColor: '#10b981', backgroundColor: '#10b981', tension: 0.3, fill: false
+                    }]
+                };
+            }, [despesasIniciais, isGlobal]);
+
+            // INDIVIDUAL: 2. Peças vs Mão de Obra
+            const dataPecasMO = useMemo(() => {
+                if(isGlobal) return null;
+                let mo = 0, pecas = 0;
+                despesasIniciais.forEach(d => {
+                    mo += (parseFloat(d.valorMaoObra) || 0);
+                    pecas += (parseFloat(d.valorPecas) || 0);
+                });
+                return {
+                    labels: ['Mão de Obra', 'Peças'],
+                    datasets: [{ data: [mo, pecas], backgroundColor: ['#8b5cf6', '#ef4444'] }]
+                };
+            }, [despesasIniciais, isGlobal]);
 
 
             // FUNÇÕES DE AÇÃO PRINCIPAIS
@@ -476,6 +493,7 @@
                 }
             };
 
+            // OUTRAS FUNÇÕES: Lembretes e Rotas
             const handleAddLembrete = () => {
                 if (isGlobal) return alert('Selecione uma viatura específica.');
                 if (!novoLembrete.freqKm && !novoLembrete.freqMeses) return alert('Indique a frequência em KM ou Meses.');
@@ -621,4 +639,508 @@
                                             {showCadastro ? 'Cancelar' : '+ Veículo'}
                                         </button>
                                     )}
-                                    <button onClick={() => { if(confirm("Deseja sair da sua conta?")) { setUserRole(null); localStorage.removeItem('rub
+                                    <button onClick={() => { if(confirm("Deseja sair da sua conta?")) { setUserRole(null); localStorage.removeItem('rubi_frota_role'); setView('dashboard'); } }} className="bg-red-500 hover:bg-red-600 text-[10px] font-bold px-3 py-1.5 rounded-full">Sair</button>
+                                </div>
+                            </div>
+                            
+                            {!showCadastro && veiculos.length > 0 && (
+                                <div className="bg-slate-800 rounded-2xl p-2 flex items-center border border-slate-700">
+                                    <span className="pl-3 text-slate-400 text-xl">{isGlobal ? '🌐' : '🚘'}</span>
+                                    <select className="w-full p-2 bg-transparent text-white font-bold outline-none appearance-none" 
+                                            value={veiculoAtivo} onChange={e => { 
+                                                setVeiculoAtivo(e.target.value); setExecucaoRota(null); setEditingDespesaIndex(null);
+                                                if (userRole === 'GESTOR') setView('dashboard');
+                                            }}>
+                                        {userRole === 'GESTOR' && <option value="TODOS" className="text-slate-900 font-bold bg-slate-100">🌐 VISÃO GLOBAL (Toda a Frota)</option>}
+                                        {userRole === 'OPERACIONAL' && <option value="TODOS" className="text-slate-900 font-bold bg-slate-100">-- Selecione a Viatura --</option>}
+                                        {veiculos.map((v, i) => <option key={i} value={v.placa} className="text-slate-900">{v.placa} - {v.veiculo}</option>)}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* CADASTRO DE VEÍCULO */}
+                        {showCadastro && userRole === 'GESTOR' && (
+                            <div className="p-5 animate-fade-in space-y-4">
+                                <h2 className="font-bold text-lg text-slate-800">Registar Novo Veículo</h2>
+                                <input className="w-full border p-3 rounded-xl outline-none" placeholder="Marca / Modelo" value={novoVeiculo.veiculo} onChange={e => setNovoVeiculo({...novoVeiculo, veiculo: e.target.value})} />
+                                <input className="w-full border p-3 rounded-xl outline-none uppercase" placeholder="Matrícula / Placa" value={novoVeiculo.placa} onChange={e => setNovoVeiculo({...novoVeiculo, placa: e.target.value})} />
+                                <input type="number" className="w-full border p-3 rounded-xl outline-none" placeholder="KM Inicial (Odómetro)" value={novoVeiculo.kmAtual} onChange={e => setNovoVeiculo({...novoVeiculo, kmAtual: e.target.value})} />
+                                <div className="grid grid-cols-2 gap-2">
+                                    <input className="w-full border p-3 rounded-xl outline-none" placeholder="Motorista Principal" value={novoVeiculo.motorista} onChange={e => setNovoVeiculo({...novoVeiculo, motorista: e.target.value})} />
+                                    <input className="w-full border p-3 rounded-xl outline-none" placeholder="Centro de Custo" value={novoVeiculo.centroCusto} onChange={e => setNovoVeiculo({...novoVeiculo, centroCusto: e.target.value})} />
+                                </div>
+                                <button onClick={handleAddVeiculo} className="w-full bg-blue-700 text-white font-bold p-4 rounded-xl shadow-lg">Guardar Veículo</button>
+                            </div>
+                        )}
+
+                        {/* MENSAGENS DE BLOQUEIO */}
+                        {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'rotas' || view === 'os' || view === 'abastecimento' || view === 'lembretes') && (
+                            <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
+                                <span className="text-5xl block mb-4 opacity-50">🔒</span>
+                                <h2 className="font-bold text-xl text-slate-700 mb-2">Ação Não Permitida</h2>
+                                <p className="text-sm">Selecione uma viatura específica no menu superior para aceder a esta aba.</p>
+                            </div>
+                        )}
+
+                        {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'OPERACIONAL' && (
+                            <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
+                                <span className="text-5xl block mb-4 opacity-50">🚘</span>
+                                <h2 className="font-bold text-xl text-slate-700 mb-2">Selecione a Viatura</h2>
+                                <p className="text-sm">Escolha o seu veículo no menu acima para iniciar a jornada.</p>
+                            </div>
+                        )}
+
+                        {/* BLOCO CENTRAL (Dashboard, Histórico, O.S, etc) */}
+                        {!showCadastro && veiculos.length > 0 && (!isGlobal || (isGlobal && userRole === 'GESTOR' && (view === 'dashboard' || view === 'historico'))) && (
+                            <div className="p-4 space-y-4 mb-16">
+                                
+                                {/* 1. DASHBOARD */}
+                                {view === 'dashboard' && userRole === 'GESTOR' && (
+                                    <div className="animate-fade-in space-y-4">
+                                        
+                                        {/* Ações de Backup na Visão Global */}
+                                        {isGlobal && (
+                                            <div className="flex justify-between items-center bg-slate-50 border border-slate-200 p-2 rounded-xl">
+                                                <span className="text-[10px] font-bold text-slate-500 px-2">SEGURANÇA (JSON)</span>
+                                                <div className="flex gap-2">
+                                                    <button onClick={exportarBackup} className="bg-white border border-slate-300 text-slate-700 text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-sm">📥 Exportar</button>
+                                                    <label className="bg-white border border-slate-300 text-slate-700 text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-sm cursor-pointer">
+                                                        📤 Importar <input type="file" accept=".json" className="hidden" onChange={importarBackup} />
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="bg-slate-800 text-white p-4 rounded-2xl shadow-sm flex flex-col gap-3">
+                                            <div className="flex justify-between items-center border-b border-slate-700 pb-3">
+                                                <div>
+                                                    <h2 className="font-bold text-lg">{isGlobal ? 'Visão Global da Empresa' : veiculoAtual.veiculo}</h2>
+                                                    <p className="text-xs text-slate-400">{isGlobal ? `${veiculos.length} veículos ativos` : `C. Custo: ${veiculoAtual.centroCusto || 'N/I'} | Motorista: ${veiculoAtual.motorista || 'N/I'}`}</p>
+                                                </div>
+                                                <span className="text-3xl">{isGlobal ? '🏢' : '🚘'}</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Custo Total</p>
+                                                    <p className="text-xl font-black text-blue-400">{formatCurrency(totalGasto)}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">{isGlobal ? 'Intervenções' : 'KM Atual'}</p>
+                                                    <p className="text-xl font-black text-white">{isGlobal ? `${despesasIniciais.length} Regs.` : kmAtualNum.toLocaleString()}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* ======================= SEÇÃO DE GRÁFICOS ======================= */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {isGlobal && dataPorCategoria && dataPorCategoria.labels.length > 0 && (
+                                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                                                    <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Distribuição de Custos</h3>
+                                                    <ChartWrapper type="doughnut" data={dataPorCategoria} options={{ responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: {size: 10} } } } }} />
+                                                </div>
+                                            )}
+                                            
+                                            {isGlobal && dataRankingVeiculos && dataRankingVeiculos.labels.length > 0 && (
+                                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                                                    <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Top 10 Custos por Viatura</h3>
+                                                    <ChartWrapper type="bar" data={dataRankingVeiculos} options={{ indexAxis: 'y', responsive: true, plugins: { legend: { display: false } } }} />
+                                                </div>
+                                            )}
+
+                                            {isGlobal && dataEvolucaoMensal && dataEvolucaoMensal.labels.length > 0 && (
+                                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
+                                                    <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Evolução Mensal de Gastos</h3>
+                                                    <ChartWrapper type="bar" data={dataEvolucaoMensal} options={{ responsive: true }} />
+                                                </div>
+                                            )}
+
+                                            {!isGlobal && dataConsumo && dataConsumo.labels.length > 0 && (
+                                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                                                    <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Evolução de Consumo (KM/L)</h3>
+                                                    <ChartWrapper type="line" data={dataConsumo} options={{ responsive: true, scales: { y: { beginAtZero: false } } }} />
+                                                </div>
+                                            )}
+
+                                            {!isGlobal && dataPecasMO && dataPecasMO.datasets[0].data[0] > 0 && (
+                                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                                                    <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Custo de Manutenção</h3>
+                                                    <ChartWrapper type="doughnut" data={dataPecasMO} options={{ responsive: true, plugins: { legend: { position: 'bottom' } } }} />
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* ================================================================= */}
+
+                                        {isGlobal ? (
+                                            <div className="mt-2">
+                                                <h3 className="font-bold text-slate-700 text-sm mb-3">Painel da Frota (Cartões)</h3>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    {veiculos.map(v => {
+                                                        const despVeiculo = despesas.filter(d => d.placa === v.placa);
+                                                        const totalVeiculo = despVeiculo.reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0);
+                                                        const custoPorKm = (parseFloat(v.kmAtual) > 0) ? (totalVeiculo / parseFloat(v.kmAtual)).toFixed(2) : 0;
+                                                        const saude = checkSaudeVeiculo(v.placa);
+                                                        const indicadorCor = saude === 'CRITICO' ? 'bg-red-500 animate-pulse' : saude === 'AVISO' ? 'bg-amber-500' : 'bg-green-500';
+                                                        
+                                                        return (
+                                                            <div key={v.placa} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 cursor-pointer hover:border-blue-400 transition relative" onClick={() => { setVeiculoAtivo(v.placa); setView('dashboard'); }}>
+                                                                <div className={`absolute top-3 right-3 w-3 h-3 rounded-full ${indicadorCor} shadow-sm border border-white`}></div>
+                                                                <div className="flex items-center gap-3 mb-3 border-b border-slate-100 pb-2">
+                                                                    <div className="bg-slate-100 w-10 h-10 rounded-full flex items-center justify-center text-xl">🚘</div>
+                                                                    <div>
+                                                                        <h4 className="font-black text-slate-800 text-sm uppercase leading-tight">{v.placa}</h4>
+                                                                        <p className="text-[10px] text-slate-500 font-bold uppercase truncate max-w-[150px]">{v.veiculo}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                                                    <div className="bg-slate-50 p-2 rounded-lg">
+                                                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Custo / KM</p>
+                                                                        <p className="font-black text-slate-700">R$ {custoPorKm}</p>
+                                                                    </div>
+                                                                    <div className="bg-slate-50 p-2 rounded-lg">
+                                                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Gasto Total</p>
+                                                                        <p className="font-black text-blue-700">{formatCurrency(totalVeiculo)}</p>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-4">
+                                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                                                    <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center">
+                                                        <h3 className="font-bold text-slate-700 text-sm">Estado da Manutenção</h3>
+                                                    </div>
+                                                    <div className="p-3 space-y-2">
+                                                        {lembretesFiltrados.length === 0 ? <p className="text-xs text-slate-400 text-center py-2">Nenhum alerta configurado.</p> : (
+                                                            lembretesFiltrados.map((l, i) => {
+                                                                const status = checkStatusLembrete(l);
+                                                                return (
+                                                                    <div key={i} className={`flex items-center justify-between p-2 rounded-xl border-l-4 shadow-sm ${status.cor}`}>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-lg">{status.icone}</span>
+                                                                            <div>
+                                                                                <p className="text-sm font-bold leading-tight">{l.tipo}</p>
+                                                                                <p className="text-[9px] font-bold uppercase opacity-80">{status.msg}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <button onClick={removerVeiculo} className="w-full border border-red-200 text-red-500 font-bold p-3 rounded-xl text-sm hover:bg-red-50 transition">
+                                                    🗑️ Excluir Viatura Permanentemente
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* 2. ROTAS (GESTOR E OPERACIONAL) */}
+                                {view === 'rotas' && !isGlobal && (
+                                    <div className="animate-fade-in space-y-4">
+                                        {userRole === 'GESTOR' && (
+                                            <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 space-y-3">
+                                                <h3 className="font-bold text-blue-800 text-sm flex items-center gap-2">🗺️ Agendar Rota</h3>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <input className="w-full border p-2 rounded-lg text-sm" placeholder="Origem" value={novaRotaGestor.origem} onChange={e => setNovaRotaGestor({...novaRotaGestor, origem: e.target.value})} />
+                                                    <input className="w-full border p-2 rounded-lg text-sm" placeholder="Destino" value={novaRotaGestor.destino} onChange={e => setNovaRotaGestor({...novaRotaGestor, destino: e.target.value})} />
+                                                </div>
+                                                <input className="w-full border p-2 rounded-lg text-sm" placeholder="Observações..." value={novaRotaGestor.observacoes} onChange={e => setNovaRotaGestor({...novaRotaGestor, observacoes: e.target.value})} />
+                                                <button onClick={handleCriarRota} className="w-full bg-blue-700 text-white font-bold p-3 rounded-xl text-sm shadow">Delegar Rota</button>
+                                            </div>
+                                        )}
+
+                                        {execucaoRota !== null ? (
+                                            <div className="bg-white p-4 rounded-2xl border border-amber-300 shadow-lg relative">
+                                                <button onClick={() => setExecucaoRota(null)} className="absolute top-4 right-4 text-slate-400 font-bold text-xs bg-slate-100 px-2 py-1 rounded">Voltar</button>
+                                                <h3 className="font-bold text-amber-600 mb-1">▶️ Executar Rota</h3>
+                                                <p className="text-sm font-bold text-slate-700">{execucaoRota.origem} ➔ {execucaoRota.destino}</p>
+                                                
+                                                <div className="space-y-3 mt-4">
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <input type="date" className="w-full border p-3 rounded-xl bg-slate-50 text-sm" value={execucaoRota.data} onChange={e => setExecucaoRota({...execucaoRota, data: e.target.value})} />
+                                                        <input className="w-full border p-3 rounded-xl text-sm" placeholder="Motorista" value={execucaoRota.motorista} onChange={e => setExecucaoRota({...execucaoRota, motorista: e.target.value})} />
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <input className="w-full border p-3 rounded-xl text-sm" placeholder="Ajudante 1 (Opc)" value={execucaoRota.ajudante1} onChange={e => setExecucaoRota({...execucaoRota, ajudante1: e.target.value})} />
+                                                        <input className="w-full border p-3 rounded-xl text-sm" placeholder="Ajudante 2 (Opc)" value={execucaoRota.ajudante2} onChange={e => setExecucaoRota({...execucaoRota, ajudante2: e.target.value})} />
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2 bg-slate-100 p-3 rounded-xl border border-slate-200">
+                                                        <div>
+                                                            <label className="text-[10px] font-bold text-slate-500 uppercase">KM Inicial</label>
+                                                            <input type="number" className="w-full border p-2 rounded-lg text-sm font-bold" value={execucaoRota.kmInicial} onChange={e => setExecucaoRota({...execucaoRota, kmInicial: e.target.value})} />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-[10px] font-bold text-blue-600 uppercase">KM Final</label>
+                                                            <input type="number" className="w-full border-2 border-blue-400 p-2 rounded-lg text-sm font-bold" placeholder="Ao chegar" value={execucaoRota.kmFinal} onChange={e => setExecucaoRota({...execucaoRota, kmFinal: e.target.value})} />
+                                                        </div>
+                                                    </div>
+                                                    {formError && <p className="text-red-500 font-bold text-xs text-center">{formError}</p>}
+                                                    <div className="flex gap-2 pt-2 border-t border-slate-100">
+                                                        <button onClick={handleSalvarRascunhoRota} className="w-1/2 bg-slate-100 border text-slate-600 font-bold p-3 rounded-xl text-sm">💾 Rascunho</button>
+                                                        <button onClick={handleConcluirRota} className="w-1/2 bg-green-600 text-white font-bold p-3 rounded-xl shadow-lg hover:bg-green-700 text-sm">✅ Concluir</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                <h3 className="font-bold text-slate-700 text-sm">Diário de Rotas</h3>
+                                                {rotasFiltradas.length === 0 ? <p className="text-xs text-slate-400 text-center py-4">Nenhuma rota.</p> : null}
+                                                {rotasFiltradas.map(r => (
+                                                    <div key={r.id} className={`p-4 rounded-xl border ${r.status === 'Pendente' ? 'bg-white border-amber-300 shadow-sm' : 'bg-slate-50 border-slate-200'}`}>
+                                                        <div className="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
+                                                            <div>
+                                                                <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase mb-1 inline-block ${r.status === 'Pendente' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>{r.status}</span>
+                                                                <h4 className="font-bold text-slate-800 text-sm leading-tight">{r.origem} ➔ {r.destino}</h4>
+                                                            </div>
+                                                        </div>
+                                                        {r.status === 'Pendente' && userRole === 'OPERACIONAL' && (
+                                                            <button onClick={() => iniciarExecucaoRota(r)} className="w-full mt-2 bg-amber-500 text-white font-bold p-2 rounded-lg text-sm">Preencher Rota</button>
+                                                        )}
+                                                        {r.status === 'Pendente' && userRole === 'GESTOR' && (
+                                                            <button onClick={() => removerRota(r.id)} className="text-red-500 text-xs font-bold underline">Cancelar Rota</button>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* 3. ABASTECIMENTO (SÓ GESTOR) */}
+                                {view === 'abastecimento' && !isGlobal && userRole === 'GESTOR' && (
+                                    <div className="bg-white p-1 animate-fade-in">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h2 className="text-xl font-bold text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar Abastecimento' : '⛽ Novo Abastecimento'}</h2>
+                                            {editingDespesaIndex !== null && <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-600 px-3 py-1 rounded-full font-bold">Cancelar</button>}
+                                        </div>
+                                        <div className="space-y-3">
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <input type="date" className="w-full border p-3 rounded-xl bg-slate-50" value={novaDespesa.data} onChange={e => setNovaDespesa({...novaDespesa, data: e.target.value})} />
+                                                <input type="number" className="w-full border p-3 rounded-xl" placeholder={`KM Bomba`} value={novaDespesa.km} onChange={e => setNovaDespesa({...novaDespesa, km: e.target.value})} />
+                                            </div>
+                                            <input className="w-full border p-3 rounded-xl" placeholder="Posto / Fornecedor" value={novaDespesa.fornecedor} onChange={e => setNovaDespesa({...novaDespesa, fornecedor: e.target.value})} />
+                                            
+                                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                                                <h3 className="text-xs font-bold text-slate-500 uppercase">Detalhes do Combustível</h3>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <input type="number" step="0.01" className="w-full border p-2 rounded-lg text-sm bg-white" placeholder="Qtd. Litros" value={novaDespesa.litros} onChange={e => {
+                                                        const l = e.target.value; const p = novaDespesa.precoLitro;
+                                                        setNovaDespesa({...novaDespesa, litros: l, valor: (p && l) ? (parseFloat(p)*parseFloat(l)).toFixed(2) : novaDespesa.valor});
+                                                    }} />
+                                                    <input type="number" step="0.01" className="w-full border p-2 rounded-lg text-sm bg-white" placeholder="Preço p/ Litro (R$)" value={novaDespesa.precoLitro} onChange={e => {
+                                                        const p = e.target.value; const l = novaDespesa.litros;
+                                                        setNovaDespesa({...novaDespesa, precoLitro: p, valor: (p && l) ? (parseFloat(p)*parseFloat(l)).toFixed(2) : novaDespesa.valor});
+                                                    }} />
+                                                </div>
+                                            </div>
+                                            <input type="number" className="w-full border p-3 rounded-xl font-bold text-blue-700 text-lg" placeholder="Valor Total (R$)" value={novaDespesa.valor} onChange={e => setNovaDespesa({...novaDespesa, valor: e.target.value})} />
+                                            <textarea rows="2" className="w-full border p-3 rounded-xl outline-none" placeholder="Observações..." value={novaDespesa.descricao} onChange={e => setNovaDespesa({...novaDespesa, descricao: e.target.value})}></textarea>
+                                            
+                                            <label className={`block bg-slate-50 border border-dashed p-4 rounded-xl text-center cursor-pointer ${isUploading ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}>
+                                                <span className={`text-sm font-bold ${isUploading ? 'text-amber-600' : 'text-slate-600'}`}>{isUploading ? '⏳ Upload em progresso...' : '📸 Anexar Foto ou PDF'}</span>
+                                                <input type="file" accept="image/*,application/pdf" className="hidden" disabled={isUploading} onChange={handleImageUpload} />
+                                            </label>
+                                            {novaDespesa.anexos.length > 0 && <p className="text-xs font-bold text-green-600 text-center">{novaDespesa.anexos.length} ficheiro(s) anexado(s).</p>}
+                                            {formError && <p className="text-red-500 font-bold text-sm text-center">{formError}</p>}
+                                            
+                                            <div className="flex gap-2 pt-2 border-t border-slate-100">
+                                                <button onClick={handleSalvarRascunhoDespesa} disabled={isUploading} className="w-1/2 bg-slate-100 border text-slate-600 font-bold p-3 rounded-xl text-sm">💾 Rascunho</button>
+                                                <button onClick={handleAddDespesa} disabled={isUploading} className={`w-1/2 text-white font-bold p-3 rounded-xl shadow-lg text-sm ${isUploading ? 'bg-slate-400' : 'bg-blue-700'}`}>✅ Concluir</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 4. ORDEM DE SERVIÇO (GESTOR E OPERACIONAL) */}
+                                {view === 'os' && !isGlobal && (
+                                    <div className="bg-white p-1 animate-fade-in">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h2 className="text-xl font-bold text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar O.S.' : '🔧 Nova O.S.'}</h2>
+                                            {editingDespesaIndex !== null && <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-600 px-3 py-1 rounded-full font-bold">Cancelar</button>}
+                                        </div>
+                                        <div className="space-y-3">
+                                            <select className="w-full bg-slate-50 p-3 rounded-xl font-bold text-slate-700 border" value={novaDespesa.categoria} onChange={e => setNovaDespesa({...novaDespesa, categoria: e.target.value})}>
+                                                <option value="Mecânica / Manutenção">Manutenção Mecânica</option><option value="Troca de Óleo / Filtros">Troca de Óleo / Filtros</option><option value="Pneus / Borracharia">Pneus / Borracharia</option><option value="Lavagem / Estética">Lavagem / Estética</option>
+                                            </select>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <select className="w-full border p-2 rounded-xl text-xs" value={novaDespesa.tipoOS} onChange={e=>setNovaDespesa({...novaDespesa, tipoOS: e.target.value})}><option value="Corretiva">Corretiva</option><option value="Preventiva">Preventiva</option></select>
+                                                <select className="w-full border p-2 rounded-xl text-xs" value={novaDespesa.localOS} onChange={e=>setNovaDespesa({...novaDespesa, localOS: e.target.value})}><option value="Externa">Externa</option><option value="Interna">Interna</option></select>
+                                                <select className="w-full border p-2 rounded-xl text-xs bg-slate-100" value={novaDespesa.situacao} onChange={e=>setNovaDespesa({...novaDespesa, situacao: e.target.value})}><option value="Orçamento">📝 Orçamento</option><option value="Em Andamento">⏳ Andamento</option><option value="Concluída">✅ Concluída</option></select>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <input type="date" className="w-full border p-3 rounded-xl bg-slate-50" value={novaDespesa.data} onChange={e => setNovaDespesa({...novaDespesa, data: e.target.value})} />
+                                                <input type="number" className="w-full border p-3 rounded-xl" placeholder={`KM Atual`} value={novaDespesa.km} onChange={e => setNovaDespesa({...novaDespesa, km: e.target.value})} />
+                                            </div>
+                                            <input className="w-full border p-3 rounded-xl" placeholder="Oficina / Fornecedor" value={novaDespesa.fornecedor} onChange={e => setNovaDespesa({...novaDespesa, fornecedor: e.target.value})} />
+                                            <textarea rows="2" className="w-full border p-3 rounded-xl outline-none" placeholder="Descrição do Serviço..." value={novaDespesa.descricao} onChange={e => setNovaDespesa({...novaDespesa, descricao: e.target.value})}></textarea>
+                                            
+                                            <div className="bg-slate-50 border p-3 rounded-xl mt-2">
+                                                <h3 className="text-xs font-bold text-slate-500 uppercase mb-2">💳 Valores Financeiros</h3>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <input type="number" className="w-full border p-2 rounded-lg text-sm bg-white" placeholder="Mão de Obra (R$)" value={novaDespesa.valorMaoObra} onChange={e=>setNovaDespesa({...novaDespesa, valorMaoObra: e.target.value})} />
+                                                    <input type="number" className="w-full border p-2 rounded-lg text-sm bg-white" placeholder="Peças (R$)" value={novaDespesa.valorPecas} onChange={e=>setNovaDespesa({...novaDespesa, valorPecas: e.target.value})} />
+                                                </div>
+                                            </div>
+                                            
+                                            <label className={`block bg-slate-50 border border-dashed p-4 rounded-xl text-center cursor-pointer ${isUploading ? 'border-amber-400' : 'border-slate-300'}`}>
+                                                <span className={`text-sm font-bold ${isUploading ? 'text-amber-600' : 'text-slate-600'}`}>{isUploading ? '⏳ Upload...' : '📸 Anexar O.S. ou PDF'}</span>
+                                                <input type="file" accept="image/*,application/pdf" multiple className="hidden" disabled={isUploading} onChange={handleImageUpload} />
+                                            </label>
+                                            
+                                            <div className="flex gap-2 pt-2 border-t border-slate-100">
+                                                <button onClick={handleSalvarRascunhoDespesa} disabled={isUploading} className="w-1/2 bg-slate-100 border text-slate-600 font-bold p-3 rounded-xl text-sm">💾 Rascunho</button>
+                                                <button onClick={handleAddDespesa} disabled={isUploading} className={`w-1/2 text-white font-bold p-3 rounded-xl shadow-lg text-sm ${isUploading ? 'bg-slate-400' : 'bg-slate-800'}`}>✅ Concluir</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 5. LEMBRETES CONFIGURAÇÃO (SÓ GESTOR) */}
+                                {view === 'lembretes' && !isGlobal && userRole === 'GESTOR' && (
+                                    <div className="animate-fade-in space-y-4">
+                                        <h2 className="text-xl font-bold text-slate-800">🔔 Configurar Alertas</h2>
+                                        <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 space-y-3">
+                                            <input className="w-full border p-2 rounded-xl text-sm" placeholder="Componente (Ex: Bateria, Óleo)" value={novoLembrete.tipo} onChange={e => setNovoLembrete({...novoLembrete, tipo: e.target.value})} list="opcoes-manutencao" />
+                                            <datalist id="opcoes-manutencao"><option value="Troca de Óleo" /><option value="Bateria" /><option value="Seguro" /></datalist>
+                                            <div className="grid grid-cols-2 gap-2 pt-2">
+                                                <input type="number" className="w-full border p-2 rounded-lg text-sm" placeholder="Freq. KM" value={novoLembrete.freqKm} onChange={e => setNovoLembrete({...novoLembrete, freqKm: e.target.value})} />
+                                                <select className="w-full border p-2 rounded-lg text-sm bg-white" value={novoLembrete.freqMeses} onChange={e => setNovoLembrete({...novoLembrete, freqMeses: e.target.value})}>
+                                                    <option value="">Apenas KM...</option><option value="3">3 meses</option><option value="12">12 meses</option>
+                                                </select>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 bg-white p-2 rounded-xl">
+                                                <input type="number" className="w-full border p-2 rounded-lg text-sm bg-slate-50" placeholder="Último KM" value={novoLembrete.ultimoKm} onChange={e => setNovoLembrete({...novoLembrete, ultimoKm: e.target.value})} />
+                                                <input type="date" className="w-full border p-2 rounded-lg text-sm bg-slate-50" value={novoLembrete.ultimaData} onChange={e => setNovoLembrete({...novoLembrete, ultimaData: e.target.value})} />
+                                            </div>
+                                            <button onClick={handleAddLembrete} className="w-full bg-blue-700 text-white font-bold p-3 rounded-xl text-sm">Guardar Alerta</button>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {lembretesFiltrados.map(l => (
+                                                <div key={l.id} className="bg-white p-3 rounded-xl border flex justify-between items-center shadow-sm">
+                                                    <div><p className="font-bold text-sm text-slate-800">{l.tipo}</p></div>
+                                                    <button onClick={() => removerLembrete(l.id)} className="text-red-600 text-xs font-bold underline">Excluir</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 6. HISTÓRICO COM PESQUISA (SÓ GESTOR) */}
+                                {view === 'historico' && userRole === 'GESTOR' && (
+                                    <div className="animate-fade-in space-y-4">
+                                        <div className="flex justify-between items-center">
+                                            <h2 className="text-xl font-bold text-slate-800">🧾 Histórico</h2>
+                                            <button onClick={generatePDF} disabled={isGenerating || despesasFiltradas.length === 0} className="bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-lg shadow">{isGenerating ? 'A exportar...' : 'Exportar PDF'}</button>
+                                        </div>
+
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-3 text-slate-400">🔍</span>
+                                            <input type="text" className="w-full bg-white border border-slate-300 rounded-xl py-3 pl-10 pr-4 text-sm font-bold shadow-sm outline-none" placeholder="Pesquisar categoria, placa ou descrição..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                                        </div>
+
+                                        {despesasFiltradas.length === 0 ? <p className="text-center text-slate-400 py-10">Nenhum registo.</p> : (
+                                            despesasFiltradas.map((d, i) => (
+                                                <div key={i} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                                                    <div className="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
+                                                        <div>
+                                                            <span className="font-bold text-slate-800 uppercase block text-sm">{d.categoria} {isGlobal && <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded">{d.placa}</span>}</span>
+                                                            <span className="text-xs text-slate-500">{d.data} • KM: {d.km || '-'}</span>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <span className="text-lg font-black text-blue-700 block">{formatCurrency(d.valor)}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-sm text-slate-600 space-y-1">
+                                                        {d.fornecedor && <p>🏢 <strong>{d.fornecedor}</strong></p>}
+                                                        {d.descricao && <p>🔧 {d.descricao}</p>}
+                                                    </div>
+                                                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-100">
+                                                        {d.anexos && d.anexos.length > 0 ? (
+                                                            <details className="text-sm">
+                                                                <summary className="text-blue-700 font-bold bg-blue-50 px-3 py-1 rounded-lg border">📸 Ver {d.anexos.length} Anexo(s) ▾</summary>
+                                                                <div className="flex flex-col gap-2 mt-2 p-2 bg-slate-50 rounded-lg">
+                                                                    {d.anexos.map((url, idx) => (<a key={idx} href={url} target="_blank" className="text-blue-600 underline text-xs">🔗 Abrir Anexo {idx+1}</a>))}
+                                                                </div>
+                                                            </details>
+                                                        ) : <div className="text-xs text-slate-300">Sem anexos</div>}
+                                                        
+                                                        <div className="flex gap-4">
+                                                            <button onClick={() => handleEditDespesa(d)} className="text-amber-600 text-xs font-bold underline">Editar</button>
+                                                            <button onClick={() => removerDespesa(d)} className="text-red-500 text-xs font-bold underline">Excluir</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* MENU INFERIOR */}
+                        {!showCadastro && veiculos.length > 0 && (
+                            <div className="fixed md:absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 px-1 py-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 overflow-x-auto hide-scroll">
+                                {userRole === 'GESTOR' ? (
+                                    <div className="flex justify-between items-center min-w-full gap-1">
+                                        <button onClick={() => { setView('dashboard'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'dashboard' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">🏠</span><span className="text-[9px] font-bold uppercase">Painel</span>
+                                        </button>
+                                        <button onClick={() => { setView('rotas'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'rotas' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">🗺️</span><span className="text-[9px] font-bold uppercase">Rotas</span>
+                                        </button>
+                                        <button onClick={() => { setView('abastecimento'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Abastecimento'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">⛽</span><span className="text-[9px] font-bold uppercase">Posto</span>
+                                        </button>
+                                        <button onClick={() => { setView('os'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'os' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">🔧</span><span className="text-[9px] font-bold uppercase">O.S.</span>
+                                        </button>
+                                        <button onClick={() => { setView('historico'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'historico' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">🧾</span><span className="text-[9px] font-bold uppercase">Histórico</span>
+                                        </button>
+                                        <button onClick={() => { setView('lembretes'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'lembretes' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">🔔</span><span className="text-[9px] font-bold uppercase">Alertas</span>
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex justify-center items-center min-w-full gap-2 px-2">
+                                        <button onClick={() => { setView('rotas'); setExecucaoRota(null); }} className={`w-1/2 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'rotas' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
+                                            <span className="text-2xl mb-1">🗺️</span><span className="text-xs font-bold uppercase">Viagens</span>
+                                        </button>
+                                        <button onClick={() => { setView('os'); setNovaDespesa(defaultDespesa); }} className={`w-1/2 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'os' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
+                                            <span className="text-2xl mb-1">🔧</span><span className="text-xs font-bold uppercase">Registar O.S.</span>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div id="pdf-content" style={{ display: 'none', width: '100%', backgroundColor: 'white', color: 'black', fontFamily: 'Arial', padding: '10px' }}>
+                        <div className="bg-slate-800 text-white rounded-lg p-2 mb-3 text-center">
+                            <h1 className="text-xl font-bold uppercase">{isGlobal ? 'Dossiê Consolidado RUBI FROTA' : 'Dossiê de Manutenção'}</h1>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<ControleFrotaMulti />);
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => console.log('✅ Service Worker registado!', reg))
+                    .catch(err => console.error('❌ Erro no Service Worker', err));
+            });
+        }
+    </script>
+</body>
+</html>
