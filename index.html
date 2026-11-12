@@ -38,7 +38,7 @@
 
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7N4C1lZperjJZiDlk_SPDEl4OlfvuvbjdePeWKa-qr2ojbu4kmL862ntMjjcZNPrPQQ/exec';
 
-        // COMPONENTE DE GRÁFICOS REFORÇADO (Para não desaparecer no telemóvel)
+        // COMPONENTE DE GRÁFICOS REFORÇADO
         const ChartWrapper = ({ type, data, options }) => {
             const canvasRef = useRef(null);
             const chartInstance = useRef(null);
@@ -48,9 +48,7 @@
                 if (chartInstance.current) chartInstance.current.destroy();
                 const ctx = canvasRef.current.getContext('2d');
                 
-                // Força a manter as proporções corretas dentro da caixa
                 const finalOptions = { ...options, maintainAspectRatio: false };
-                
                 chartInstance.current = new window.Chart(ctx, { type, data, options: finalOptions });
                 return () => { if (chartInstance.current) chartInstance.current.destroy(); };
             }, [type, data, options]);
@@ -113,7 +111,7 @@
             const dataPorCategoria = useMemo(() => {
                 const map = {};
                 despesasIniciais.forEach(d => { map[d.categoria] = (map[d.categoria] || 0) + (parseFloat(d.valor) || 0); });
-                if (Object.keys(map).length === 0) return null; // Retorna null se não houver dados
+                if (Object.keys(map).length === 0) return null;
                 return { labels: Object.keys(map), datasets: [{ data: Object.values(map), backgroundColor: coresGrafico, borderWidth: 1 }] };
             }, [despesasIniciais]);
 
@@ -274,7 +272,7 @@
                 );
             }
 
-            // FUNÇÕES COMPARTILHADAS (Filtros e Atualizações)
+            // FUNÇÕES COMPARTILHADAS
             const despesasFiltradas = despesasIniciais.filter(d => 
                 (d.categoria && d.categoria.toLowerCase().includes(searchTerm.toLowerCase())) || 
                 (d.fornecedor && d.fornecedor.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -354,7 +352,12 @@
                 localStorage.removeItem('rubi_frota_rascunho_despesa');
                 setEditingDespesaIndex(null);
                 setNovaDespesa(defaultDespesa);
-                if(userRole === 'GESTOR') setView('historico');
+                
+                if(userRole === 'GESTOR') {
+                    setView('historico');
+                } else {
+                    setView('rotas'); // Retorna o motorista à aba de viagens
+                }
             };
 
             const handleEditDespesa = (despesa) => {
@@ -525,9 +528,7 @@
                 }).catch(() => setIsGenerating(false));
             };
 
-            // -----------------------------------------------------------
             // RENDERIZAÇÃO DA INTERFACE PRINCIPAL
-            // -----------------------------------------------------------
             return (
                 <div className="min-h-screen font-sans text-slate-800 pb-24 md:pb-10 max-w-md md:max-w-4xl mx-auto md:mt-4 shadow-xl bg-white md:rounded-3xl overflow-hidden relative border border-slate-200">
                     
@@ -567,11 +568,7 @@
                             )}
                         </div>
 
-                        {/* ========================================================
-                            ESTADOS DE BLOQUEIO VISUAL CLARO (EMPTY STATES / LOCKS)
-                        ======================================================== */}
-
-                        {/* ESTADO 1: FROTA VAZIA (Nenhum veículo registado ainda) */}
+                        {/* ESTADO 1: FROTA VAZIA */}
                         {!showCadastro && veiculos.length === 0 && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4">🚘</span>
@@ -585,7 +582,7 @@
                             </div>
                         )}
 
-                        {/* ESTADO 2: GESTOR TENTA ABRIR FORMULÁRIO SEM ESCOLHER CARRO */}
+                        {/* ESTADO 2: GESTOR SEM CARRO */}
                         {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'rotas' || view === 'os' || view === 'abastecimento' || view === 'lembretes') && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4 opacity-50">🔒</span>
@@ -594,7 +591,7 @@
                             </div>
                         )}
 
-                        {/* ESTADO 3: OPERACIONAL ACABOU DE ENTRAR E NÃO ESCOLHEU CARRO */}
+                        {/* ESTADO 3: OPERACIONAL SEM CARRO */}
                         {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'OPERACIONAL' && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4 opacity-50">👆</span>
@@ -659,9 +656,8 @@
                                             </div>
                                         </div>
 
-                                        {/* GRÁFICOS INTELIGENTES (Com Empty States para não parecer erro) */}
+                                        {/* GRÁFICOS INTELIGENTES */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {/* Gráficos Globais (Empresa) */}
                                             {isGlobal && (!dataPorCategoria || dataPorCategoria.labels.length === 0) && (
                                                 <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
                                                     <span className="text-3xl block mb-2 opacity-50">📊</span>
@@ -690,7 +686,6 @@
                                                 </div>
                                             )}
 
-                                            {/* Gráficos Individuais (Por Carro) */}
                                             {!isGlobal && (!dataConsumo || dataConsumo.labels.length === 0) && (!dataPecasMO) && (
                                                 <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
                                                     <span className="text-3xl block mb-2 opacity-50">📉</span>
@@ -782,7 +777,7 @@
                                     </div>
                                 )}
 
-                                {/* 2. ROTAS */}
+                                {/* 2. ROTAS (GESTOR E OPERACIONAL) */}
                                 {view === 'rotas' && !isGlobal && (
                                     <div className="animate-fade-in space-y-4">
                                         {userRole === 'GESTOR' && (
@@ -854,8 +849,8 @@
                                     </div>
                                 )}
 
-                                {/* 3. ABASTECIMENTO */}
-                                {view === 'abastecimento' && !isGlobal && userRole === 'GESTOR' && (
+                                {/* 3. ABASTECIMENTO / POSTO (GESTOR E OPERACIONAL) */}
+                                {view === 'abastecimento' && !isGlobal && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
                                             <h2 className="text-xl font-bold text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar Abastecimento' : '⛽ Novo Abastecimento'}</h2>
@@ -899,7 +894,7 @@
                                     </div>
                                 )}
 
-                                {/* 4. ORDEM DE SERVIÇO */}
+                                {/* 4. ORDEM DE SERVIÇO (GESTOR E OPERACIONAL) */}
                                 {view === 'os' && !isGlobal && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
@@ -943,7 +938,7 @@
                                     </div>
                                 )}
 
-                                {/* 5. LEMBRETES */}
+                                {/* 5. LEMBRETES CONFIGURAÇÃO (SÓ GESTOR) */}
                                 {view === 'lembretes' && !isGlobal && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         <h2 className="text-xl font-bold text-slate-800">🔔 Configurar Alertas</h2>
@@ -973,7 +968,7 @@
                                     </div>
                                 )}
 
-                                {/* 6. HISTÓRICO COM PESQUISA */}
+                                {/* 6. HISTÓRICO COM PESQUISA (SÓ GESTOR) */}
                                 {view === 'historico' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         <div className="flex justify-between items-center">
@@ -1025,10 +1020,14 @@
                             </div>
                         )}
 
-                        {/* MENU INFERIOR */}
+                        {/* ========================================================
+                            MENUS INFERIORES DE NAVEGAÇÃO
+                        ======================================================== */}
                         {!showCadastro && veiculos.length > 0 && (
                             <div className="fixed md:absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 px-1 py-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 overflow-x-auto hide-scroll">
+                                
                                 {userRole === 'GESTOR' ? (
+                                    /* MENU DO GESTOR (6 Botões) */
                                     <div className="flex justify-between items-center min-w-full gap-1">
                                         <button onClick={() => { setView('dashboard'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'dashboard' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🏠</span><span className="text-[9px] font-bold uppercase">Painel</span>
@@ -1042,22 +1041,35 @@
                                         <button onClick={() => { setView('os'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'os' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🔧</span><span className="text-[9px] font-bold uppercase">O.S.</span>
                                         </button>
+                                        <button onClick={() => { setView('lembretes'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'lembretes' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">🔔</span><span className="text-[9px] font-bold uppercase">Alertas</span>
+                                        </button>
                                         <button onClick={() => { setView('historico'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'historico' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🧾</span><span className="text-[9px] font-bold uppercase">Histórico</span>
                                         </button>
                                     </div>
                                 ) : (
+                                    /* MENU DO OPERACIONAL (3 Botões) */
                                     <div className="flex justify-center items-center min-w-full gap-2 px-2">
-                                        <button onClick={() => { setView('rotas'); setExecucaoRota(null); }} className={`w-1/2 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'rotas' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
-                                            <span className="text-2xl mb-1">🗺️</span><span className="text-xs font-bold uppercase">Viagens</span>
+                                        <button onClick={() => { setView('rotas'); setExecucaoRota(null); }} className={`w-1/3 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'rotas' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
+                                            <span className="text-2xl mb-1">🗺️</span><span className="text-[10px] font-bold uppercase">Viagens</span>
                                         </button>
-                                        <button onClick={() => { setView('os'); setNovaDespesa(defaultDespesa); }} className={`w-1/2 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'os' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
-                                            <span className="text-2xl mb-1">🔧</span><span className="text-xs font-bold uppercase">Registar O.S.</span>
+                                        <button onClick={() => { setView('abastecimento'); setNovaDespesa({...defaultDespesa, categoria: 'Abastecimento'}); }} className={`w-1/3 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
+                                            <span className="text-2xl mb-1">⛽</span><span className="text-[10px] font-bold uppercase">Posto</span>
+                                        </button>
+                                        <button onClick={() => { setView('os'); setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`w-1/3 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'os' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
+                                            <span className="text-2xl mb-1">🔧</span><span className="text-[10px] font-bold uppercase">Registar O.S.</span>
                                         </button>
                                     </div>
                                 )}
                             </div>
                         )}
+                    </div>
+                    
+                    <div id="pdf-content" style={{ display: 'none', width: '100%', backgroundColor: 'white', color: 'black', fontFamily: 'Arial', padding: '10px' }}>
+                        <div className="bg-slate-800 text-white rounded-lg p-2 mb-3 text-center">
+                            <h1 className="text-xl font-bold uppercase">{isGlobal ? 'Dossiê Consolidado RUBI FROTA' : 'Dossiê de Manutenção'}</h1>
+                        </div>
                     </div>
                 </div>
             );
@@ -1065,6 +1077,15 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ControleFrotaMulti />);
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => console.log('✅ Service Worker registado!', reg))
+                    .catch(err => console.error('❌ Erro no Service Worker', err));
+            });
+        }
     </script>
 </body>
 </html>
