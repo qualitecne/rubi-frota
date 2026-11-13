@@ -69,11 +69,11 @@
             const [despesas, setDespesas] = useState([]);
             const [lembretes, setLembretes] = useState([]);
             const [rotas, setRotas] = useState([]);
-            const [funcionarios, setFuncionarios] = useState([]); // NOVO ESTADO DA EQUIPA
+            const [funcionarios, setFuncionarios] = useState([]);
             
             const [view, setView] = useState('dashboard');
             const [showCadastro, setShowCadastro] = useState(false);
-            const [showCadastroFunc, setShowCadastroFunc] = useState(false); // ESTADO P/ MOSTRAR FORM DE FUNCIONÁRIO
+            const [showCadastroFunc, setShowCadastroFunc] = useState(false);
             
             const [isGenerating, setIsGenerating] = useState(false);
             const [formError, setFormError] = useState('');
@@ -84,8 +84,7 @@
             const [searchTerm, setSearchTerm] = useState('');
 
             const [novoVeiculo, setNovoVeiculo] = useState({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
-            
-            const [novoFuncionario, setNovoFuncionario] = useState({ nome: '', cargo: 'Motorista' }); // NOVO FUNCIONÁRIO
+            const [novoFuncionario, setNovoFuncionario] = useState({ nome: '', cargo: 'Motorista' });
 
             const defaultDespesa = {
                 categoria: 'Mecânica / Manutenção', data: new Date().toISOString().split('T')[0], 
@@ -116,7 +115,7 @@
 
             const getNomeRota = (rotaId) => {
                 const r = rotas.find(rt => String(rt.id) === String(rotaId));
-                return r ? `${r.id} (${r.origem} ➔ ${r.destino})` : `Rota ${rotaId}`;
+                return r ? (r.status === 'Pendente' ? `⏳ ${r.origem} ➔ ${r.destino}` : `${r.id} (${r.origem} ➔ ${r.destino})`) : `Rota ${rotaId}`;
             };
 
             // PREPARAÇÃO DOS DADOS GRÁFICOS
@@ -257,7 +256,6 @@
                 reader.readAsText(file);
             };
 
-            // ECRÃ DE LOGIN
             if (!userRole) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6 animate-fade-in">
@@ -304,9 +302,6 @@
                 return veiculos;
             };
 
-            // =====================================
-            // LÓGICA DE FUNCIONÁRIOS (EQUIPA)
-            // =====================================
             const handleAddFuncionario = () => {
                 if (!novoFuncionario.nome) return alert('O nome do colaborador é obrigatório!');
                 if (funcionarios.find(f => f.nome.toLowerCase() === novoFuncionario.nome.toLowerCase())) return alert('Membro já registado!');
@@ -462,32 +457,26 @@
                 }
             };
 
+            // =====================================
+            // LÓGICA DE ROTAS COM TELEMETRIA
+            // =====================================
             const handleCriarRota = () => {
                 if(isGlobal) return alert('Selecione uma viatura para delegar a rota.');
                 if(!novaRotaGestor.origem || !novaRotaGestor.destino) return alert('Origem e destino são obrigatórios.');
                 
-                const hoje = new Date();
-                const yy = hoje.getFullYear().toString().slice(-2);
-                const dia = String(hoje.getDate()).padStart(2, '0');
-                const mes = String(hoje.getMonth() + 1).padStart(2, '0');
-                const destCru = novaRotaGestor.destino.trim().split(' ')[0].toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-                
-                const baseId = `RT${yy}-${destCru}-${dia}${mes}`;
-                let finalId = baseId;
-                let counter = 2;
-                while(rotas.find(r => r.id === finalId)) { finalId = `${baseId}-${counter}`; counter++; }
-
+                // O Gestor cria a rota com ID pendente (Timestamp oculto), o ID oficial será gerado no INÍCIO
                 const novaRota = { 
-                    id: finalId, placa: veiculoAtivo, status: 'Pendente', 
+                    id: Date.now().toString(), 
+                    placa: veiculoAtivo, status: 'Pendente', 
                     origem: novaRotaGestor.origem, destino: novaRotaGestor.destino, 
-                    observacoes: novaRotaGestor.observacoes, data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: '', dataInicial: '' 
+                    observacoes: novaRotaGestor.observacoes, data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: '', horaInicial: '' 
                 };
                 
                 const novasRotas = [...rotas, novaRota];
                 setRotas(novasRotas);
                 salvarNaNuvem(veiculos, despesas, lembretes, novasRotas);
                 setNovaRotaGestor({origem: '', destino: '', observacoes: ''});
-                alert(`Rota ${finalId} agendada com sucesso!`);
+                alert(`Rota agendada com sucesso!`);
             };
 
             const iniciarExecucaoRota = (rota) => {
@@ -497,10 +486,13 @@
                     if (parsed.id === rota.id) { setExecucaoRota(parsed); return; }
                 }
                 
+                // Captura do exato instante de partida
                 const agora = new Date();
-                const dataStr = agora.toLocaleDateString('pt-BR');
+                const tzOffset = agora.getTimezoneOffset() * 60000;
+                const dataLocal = (new Date(agora.getTime() - tzOffset)).toISOString().split('T')[0]; // Data padrao HTML para o Input Date
                 const horaStr = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                setExecucaoRota({ ...rota, dataInicial: `${dataStr} ${horaStr}`, kmInicial: kmAtualNum });
+                
+                setExecucaoRota({ ...rota, data: dataLocal, horaInicial: horaStr, kmInicial: kmAtualNum });
             };
 
             const handleSalvarRascunhoRota = () => { localStorage.setItem('rubi_frota_rascunho_rota', JSON.stringify(execucaoRota)); alert('💾 Rascunho da viagem salvo!'); };
@@ -508,29 +500,58 @@
             const handleConcluirRota = () => {
                 if(!execucaoRota.kmInicial || !execucaoRota.kmFinal || !execucaoRota.motorista) return setFormError('Motorista, KM Inicial e Final são obrigatórios.');
                 if(parseFloat(execucaoRota.kmFinal) <= parseFloat(execucaoRota.kmInicial)) return setFormError('O KM Final deve ser maior que o KM Inicial.');
+                if(!execucaoRota.data) return setFormError('A data de partida é obrigatória.');
                 setFormError('');
                 
                 const novosVeiculos = atualizarKmVeiculo(execucaoRota.kmFinal, veiculoAtivo);
                 setVeiculos(novosVeiculos);
                 
                 let novaData = execucaoRota.data;
+                let finalId = execucaoRota.id;
+                let novasDespesas = despesas;
+
                 if (execucaoRota.status === 'Pendente') {
-                    const agora = new Date();
-                    const dataStr = agora.toLocaleDateString('pt-BR');
-                    const horaStr = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                    novaData = `${execucaoRota.dataInicial || ''} até ${dataStr} ${horaStr}`;
+                    // 1. Gera Código Oficial Baseado na Data do Formulário
+                    const [anoStr, mesStr, diaStr] = execucaoRota.data.split('-');
+                    const yy = anoStr.slice(-2);
+                    const destCru = execucaoRota.destino.trim().split(' ')[0].toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                    const baseId = `RT${yy}-${destCru}-${diaStr}${mesStr}`;
+                    
+                    finalId = baseId;
+                    let counter = 2;
+                    while(rotas.find(r => r.id === finalId && r.id !== execucaoRota.id)) { finalId = `${baseId}-${counter}`; counter++; }
+                    
+                    // 2. Gera a String visual do Período (Chegada agora)
+                    const agoraFim = new Date();
+                    const horaFim = agoraFim.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                    const dataFimBr = agoraFim.toLocaleDateString('pt-BR');
+                    const dataInBr = `${diaStr}/${mesStr}/${anoStr}`;
+                    
+                    novaData = `${dataInBr} ${execucaoRota.horaInicial} até ${dataFimBr} ${horaFim}`;
+                    
+                    // 3. Atualiza as Despesas que foram vinculadas enquanto a rota estava com ID temporário
+                    if (finalId !== execucaoRota.id) {
+                        novasDespesas = despesas.map(d => {
+                            if (String(d.rotaVinculada) === String(execucaoRota.id)) {
+                                return { ...d, rotaVinculada: finalId };
+                            }
+                            return d;
+                        });
+                        setDespesas(novasDespesas);
+                    }
                 }
                 
-                const novasRotas = rotas.map(r => r.id === execucaoRota.id ? { ...r, ...execucaoRota, data: novaData, status: 'Concluída' } : r);
+                const novasRotas = rotas.map(r => r.id === execucaoRota.id ? { ...r, ...execucaoRota, id: finalId, data: novaData, status: 'Concluída' } : r);
                 setRotas(novasRotas);
-                salvarNaNuvem(novosVeiculos, despesas, lembretes, novasRotas);
+                salvarNaNuvem(novosVeiculos, novasDespesas, lembretes, novasRotas);
+                
                 localStorage.removeItem('rubi_frota_rascunho_rota');
                 setExecucaoRota(null);
                 alert('✅ Viagem salva e concluída com sucesso!');
             };
 
             const removerRota = (id) => {
-                if(confirm(`Deseja excluir / cancelar a rota ${id}?`)) {
+                if(confirm(`Deseja excluir / cancelar esta rota?`)) {
                     const novasRotas = rotas.filter(r => r.id !== id);
                     setRotas(novasRotas);
                     salvarNaNuvem(veiculos, despesas, lembretes, novasRotas);
@@ -596,7 +617,7 @@
                         <option value="">-- Sem vínculo específico --</option>
                         {rotasParaVincular.map(r => (
                             <option key={r.id} value={r.id}>
-                                {r.status === 'Pendente' ? '⏳' : '✅'} [{r.id}] {r.origem} ➔ {r.destino}
+                                {r.status === 'Pendente' ? '⏳' : '✅'} {r.status === 'Pendente' ? '(Pendente)' : `[${r.id}]`} {r.origem} ➔ {r.destino}
                             </option>
                         ))}
                     </select>
@@ -649,7 +670,7 @@
                             )}
                         </div>
 
-                        {/* ESTADO 1: FROTA VAZIA */}
+                        {/* ESTADOS DE BLOQUEIO */}
                         {!showCadastro && !showCadastroFunc && veiculos.length === 0 && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4">🚘</span>
@@ -662,8 +683,6 @@
                                 )}
                             </div>
                         )}
-
-                        {/* ESTADO 2: GESTOR SEM CARRO */}
                         {!showCadastro && !showCadastroFunc && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'rotas' || view === 'os' || view === 'abastecimento' || view === 'lembretes' || view === 'despesaGeral') && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4 opacity-50">🔒</span>
@@ -671,8 +690,6 @@
                                 <p className="text-sm">Para ver ou preencher formulários, <strong>selecione a matrícula do veículo no menu escuro lá no topo.</strong></p>
                             </div>
                         )}
-
-                        {/* ESTADO 3: OPERACIONAL SEM CARRO */}
                         {!showCadastro && !showCadastroFunc && isGlobal && veiculos.length > 0 && userRole === 'OPERACIONAL' && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4 opacity-50">👆</span>
@@ -681,7 +698,7 @@
                             </div>
                         )}
 
-                        {/* CADASTRO DE EQUIPA (NOVO) */}
+                        {/* CADASTRO DE EQUIPA */}
                         {showCadastroFunc && userRole === 'GESTOR' && (
                             <div className="p-5 animate-fade-in space-y-4">
                                 <h2 className="font-bold text-lg text-slate-800">👥 Registar Membro da Equipa</h2>
@@ -722,7 +739,6 @@
                                 <input className="w-full border p-3 rounded-xl outline-none uppercase" placeholder="Matrícula / Placa" value={novoVeiculo.placa} onChange={e => setNovoVeiculo({...novoVeiculo, placa: e.target.value})} />
                                 <input type="number" className="w-full border p-3 rounded-xl outline-none" placeholder="KM Inicial (Odómetro)" value={novoVeiculo.kmAtual} onChange={e => setNovoVeiculo({...novoVeiculo, kmAtual: e.target.value})} />
                                 <div className="grid grid-cols-2 gap-2">
-                                    {/* Select de Motorista no Veículo */}
                                     <select className="w-full border p-3 rounded-xl outline-none bg-white text-sm" value={novoVeiculo.motorista} onChange={e => setNovoVeiculo({...novoVeiculo, motorista: e.target.value})}>
                                         <option value="" disabled>Selecione Motorista</option>
                                         <option value="Sem Motorista Fixo">-- Sem Motorista Fixo --</option>
@@ -741,8 +757,6 @@
                                 {/* 1. DASHBOARD */}
                                 {view === 'dashboard' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
-                                        
-                                        {/* Ações de Backup na Visão Global */}
                                         {isGlobal && (
                                             <div className="flex justify-between items-center bg-slate-50 border border-slate-200 p-2 rounded-xl">
                                                 <span className="text-[10px] font-bold text-slate-500 px-2">SEGURANÇA (JSON)</span>
@@ -754,7 +768,6 @@
                                                 </div>
                                             </div>
                                         )}
-
                                         <div className="bg-slate-800 text-white p-4 rounded-2xl shadow-sm flex flex-col gap-3">
                                             <div className="flex justify-between items-center border-b border-slate-700 pb-3">
                                                 <div>
@@ -775,7 +788,7 @@
                                             </div>
                                         </div>
 
-                                        {/* GRÁFICOS INTELIGENTES (Com Empty States para não parecer erro) */}
+                                        {/* GRÁFICOS */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             {isGlobal && (!dataPorCategoria || dataPorCategoria.labels.length === 0) && (
                                                 <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
@@ -891,11 +904,12 @@
                                 )}
 
                                 {/* =======================================
-                                    2. ROTAS (AGORA COM SELECT DE MOTORISTA)
+                                    2. ROTAS
                                 ======================================== */}
                                 {view === 'rotas' && !isGlobal && (
                                     <div className="animate-fade-in space-y-4">
-                                        {/* Apenas Gestor vê o formulário de Agendar */}
+                                        
+                                        {/* GESTOR CRIA A ROTA */}
                                         {userRole === 'GESTOR' && execucaoRota === null && (
                                             <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 space-y-3">
                                                 <h3 className="font-bold text-blue-800 text-sm flex items-center gap-2">🗺️ Agendar Rota</h3>
@@ -908,7 +922,7 @@
                                             </div>
                                         )}
 
-                                        {/* Formulário de Execução / Edição */}
+                                        {/* FORMULÁRIO DE EXECUÇÃO */}
                                         {execucaoRota !== null ? (
                                             <div className="bg-white p-4 rounded-2xl border border-amber-300 shadow-lg relative">
                                                 <button onClick={() => setExecucaoRota(null)} className="absolute top-4 right-4 text-slate-400 font-bold text-xs bg-slate-100 px-2 py-1 rounded">Voltar</button>
@@ -919,7 +933,7 @@
                                                 
                                                 <div className="mb-4">
                                                     <span className="bg-slate-100 text-slate-600 text-[10px] font-black px-2 py-1 rounded border border-slate-200">
-                                                        ID: {execucaoRota.id}
+                                                        ID: {execucaoRota.status === 'Pendente' ? 'Gerado no final' : execucaoRota.id}
                                                     </span>
                                                 </div>
                                                 
@@ -940,27 +954,28 @@
                                                         <input className="w-full border p-2 rounded-lg text-sm bg-blue-50" placeholder="Sem observações..." value={execucaoRota.observacoes} onChange={e => setExecucaoRota({...execucaoRota, observacoes: e.target.value})} />
                                                     </div>
 
+                                                    {/* SELECÇÃO DE DATA E HORA */}
                                                     <div className="grid grid-cols-1 gap-2 mt-2">
                                                         {execucaoRota.status === 'Pendente' ? (
-                                                            <div className="flex justify-between items-center bg-blue-50 p-3 rounded-xl border border-blue-100">
+                                                            <div className="grid grid-cols-2 gap-2 bg-blue-50 p-3 rounded-xl border border-blue-100">
                                                                 <div>
-                                                                    <p className="text-[10px] font-bold text-blue-700 uppercase">Partida</p>
-                                                                    <p className="text-sm font-black text-slate-800">{execucaoRota.dataInicial}</p>
+                                                                    <label className="text-[10px] font-bold text-blue-700 uppercase">Data Partida</label>
+                                                                    <input type="date" className="w-full border p-2 rounded-lg text-sm bg-white font-bold text-slate-800" value={execucaoRota.data} onChange={e => setExecucaoRota({...execucaoRota, data: e.target.value})} />
                                                                 </div>
-                                                                <div className="text-right">
-                                                                    <p className="text-[10px] font-bold text-blue-700 uppercase">Chegada</p>
-                                                                    <p className="text-sm font-black text-slate-400 italic">Ao concluir</p>
+                                                                <div>
+                                                                    <label className="text-[10px] font-bold text-blue-700 uppercase">Hora Auto</label>
+                                                                    <input type="text" disabled className="w-full border p-2 rounded-lg text-sm bg-blue-100 text-slate-500 font-bold" value={execucaoRota.horaInicial} />
                                                                 </div>
+                                                                <p className="col-span-2 text-[9px] text-blue-600 mt-1">* A hora de chegada é gravada automaticamente ao concluir.</p>
                                                             </div>
                                                         ) : (
                                                             <div>
-                                                                <label className="text-[9px] font-bold text-slate-500 uppercase">Período da Viagem (Início até Fim)</label>
+                                                                <label className="text-[9px] font-bold text-slate-500 uppercase">Período da Viagem (Livre Edição)</label>
                                                                 <input type="text" className="w-full border p-3 rounded-xl bg-white text-sm" value={execucaoRota.data} onChange={e => setExecucaoRota({...execucaoRota, data: e.target.value})} />
                                                             </div>
                                                         )}
                                                     </div>
 
-                                                    {/* SELETORES DE EQUIPA SEM ESPAÇOS EM BRANCO */}
                                                     <div className="grid grid-cols-1 gap-2 pt-2 border-t border-slate-200">
                                                         <select className="w-full border p-3 rounded-xl text-sm bg-slate-50 font-bold" value={execucaoRota.motorista} onChange={e => setExecucaoRota({...execucaoRota, motorista: e.target.value})}>
                                                             <option value="" disabled>-- Selecione o Motorista --</option>
@@ -1004,7 +1019,7 @@
                                                         <div className="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
                                                             <div>
                                                                 <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase mb-1 inline-block ${r.status === 'Pendente' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>{r.status}</span>
-                                                                <span className="text-[10px] font-black text-slate-500 ml-2 bg-slate-100 px-1 rounded border">{r.id}</span>
+                                                                {r.status === 'Concluída' && <span className="text-[10px] font-black text-slate-500 ml-2 bg-slate-100 px-1 rounded border">{r.id}</span>}
                                                                 <h4 className="font-bold text-slate-800 text-sm leading-tight mt-1">{r.origem} ➔ {r.destino}</h4>
                                                             </div>
                                                             {r.status === 'Concluída' && (
@@ -1088,7 +1103,7 @@
                                     </div>
                                 )}
 
-                                {/* 4. ORDEM DE SERVIÇO */}
+                                {/* 4. OR একদিকে SERVIÇO */}
                                 {view === 'os' && !isGlobal && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
@@ -1227,10 +1242,9 @@
                                                         </div>
                                                     </div>
                                                     
-                                                    {/* Exibe etiqueta de vínculo se tiver Rota */}
                                                     {d.rotaVinculada && (
                                                         <div className="mb-2">
-                                                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-1 rounded">🛣️ Associado à Viagem: {getNomeRota(d.rotaVinculada)}</span>
+                                                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-1 rounded border border-emerald-200">🛣️ Associado à Viagem: {getNomeRota(d.rotaVinculada)}</span>
                                                         </div>
                                                     )}
 
@@ -1320,6 +1334,15 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ControleFrotaMulti />);
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => console.log('✅ Service Worker registado!', reg))
+                    .catch(err => console.error('❌ Erro no Service Worker', err));
+            });
+        }
     </script>
 </body>
 </html>
