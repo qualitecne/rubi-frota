@@ -4,11 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RUBI FROTA - Gestão Inteligente</title>
+    <!-- Bibliotecas -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <!-- Biblioteca Gráfica (Chart.js) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <link rel="manifest" href="manifest.json">
@@ -19,7 +22,11 @@
         details > summary::-webkit-details-marker { display: none; }
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
         .animate-fade-in { animation: fadeIn 0.3s ease forwards; }
     </style>
 </head>
@@ -31,25 +38,31 @@
 
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7N4C1lZperjJZiDlk_SPDEl4OlfvuvbjdePeWKa-qr2ojbu4kmL862ntMjjcZNPrPQQ/exec';
 
+        // COMPONENTE DE GRÁFICOS
         const ChartWrapper = ({ type, data, options }) => {
             const canvasRef = useRef(null);
             const chartInstance = useRef(null);
+
             useEffect(() => {
                 if (typeof window.Chart === 'undefined') return;
                 if (chartInstance.current) chartInstance.current.destroy();
                 const ctx = canvasRef.current.getContext('2d');
-                chartInstance.current = new window.Chart(ctx, { type, data, options: { ...options, maintainAspectRatio: false } });
+                
+                const finalOptions = { ...options, maintainAspectRatio: false };
+                chartInstance.current = new window.Chart(ctx, { type, data, options: finalOptions });
                 return () => { if (chartInstance.current) chartInstance.current.destroy(); };
             }, [type, data, options]);
+
             return (
                 <div className="relative w-full h-[250px] flex items-center justify-center">
-                    {typeof window.Chart === 'undefined' && <span className="text-xs text-red-400">Erro: Gráficos indisponíveis.</span>}
+                    {typeof window.Chart === 'undefined' && <span className="text-xs text-red-400">Erro: Biblioteca de gráficos indisponível.</span>}
                     <canvas ref={canvasRef}></canvas>
                 </div>
             );
         };
 
         function ControleFrotaMulti() {
+            // ESTADOS (HOOKS)
             const [userRole, setUserRole] = useState(null); 
             const [veiculos, setVeiculos] = useState([]);
             const [veiculoAtivo, setVeiculoAtivo] = useState('TODOS'); 
@@ -69,7 +82,6 @@
 
             const [novoVeiculo, setNovoVeiculo] = useState({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
 
-            // RotaVinculada adicionada ao default
             const defaultDespesa = {
                 categoria: 'Mecânica / Manutenção', data: new Date().toISOString().split('T')[0], 
                 valor: '', valorMaoObra: '', valorPecas: '', situacao: 'Concluída',
@@ -86,22 +98,23 @@
             const [novaRotaGestor, setNovaRotaGestor] = useState({ origem: '', destino: '', observacoes: '' });
             const [execucaoRota, setExecucaoRota] = useState(null);
 
+            // VARIÁVEIS BASE
             const isGlobal = veiculoAtivo === 'TODOS';
             const veiculoAtual = isGlobal ? null : veiculos.find(v => v.placa === veiculoAtivo);
             const kmAtualNum = veiculoAtual ? parseFloat(veiculoAtual.kmAtual) || 0 : 0;
             const despesasIniciais = isGlobal ? despesas.slice().reverse() : despesas.filter(d => d.placa === veiculoAtivo).reverse();
             
-            // Rotas disponíveis para vincular (da viatura ativa, últimas 20)
             const rotasParaVincular = useMemo(() => {
                 if (isGlobal) return [];
                 return rotas.filter(r => r.placa === veiculoAtivo).reverse().slice(0, 20);
             }, [rotas, veiculoAtivo, isGlobal]);
 
             const getNomeRota = (rotaId) => {
-                const r = rotas.find(rt => rt.id.toString() === rotaId.toString());
-                return r ? `${r.origem} ➔ ${r.destino}` : 'Rota Desconhecida';
+                const r = rotas.find(rt => String(rt.id) === String(rotaId));
+                return r ? `${r.id} (${r.origem} ➔ ${r.destino})` : `Rota ${rotaId}`;
             };
 
+            // PREPARAÇÃO DOS DADOS GRÁFICOS
             const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b', '#0ea5e9'];
             
             const dataPorCategoria = useMemo(() => {
@@ -156,6 +169,7 @@
                 return { labels: ['Mão de Obra', 'Peças'], datasets: [{ data: [mo, pecas], backgroundColor: ['#8b5cf6', '#ef4444'] }] };
             }, [despesasIniciais, isGlobal]);
 
+            // EFEITOS
             useEffect(() => {
                 const savedRole = localStorage.getItem('rubi_frota_role');
                 if (savedRole) { setUserRole(savedRole); if (savedRole === 'OPERACIONAL') setView('rotas'); }
@@ -172,6 +186,7 @@
                 }
             }, [view, veiculoAtivo, editingDespesaIndex]);
 
+            // NUVEM E BACKUP
             const carregarDaNuvem = async () => {
                 setSyncStatus('⏳ A puxar...');
                 try {
@@ -264,7 +279,8 @@
                 (d.categoria && d.categoria.toLowerCase().includes(searchTerm.toLowerCase())) || 
                 (d.fornecedor && d.fornecedor.toLowerCase().includes(searchTerm.toLowerCase())) ||
                 (d.descricao && d.descricao.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                (d.placa && d.placa.toLowerCase().includes(searchTerm.toLowerCase()))
+                (d.placa && d.placa.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                (d.rotaVinculada && d.rotaVinculada.toLowerCase().includes(searchTerm.toLowerCase()))
             );
 
             const lembretesFiltrados = isGlobal ? lembretes : lembretes.filter(l => l.placa === veiculoAtivo);
@@ -417,15 +433,44 @@
                 }
             };
 
+            // ========================================================
+            // LÓGICA DE ROTAS COM ID CUSTOMIZADO E INTELIGENTE
+            // ========================================================
             const handleCriarRota = () => {
                 if(isGlobal) return alert('Selecione uma viatura para delegar a rota.');
                 if(!novaRotaGestor.origem || !novaRotaGestor.destino) return alert('Origem e destino são obrigatórios.');
-                const novaRota = { id: Date.now(), placa: veiculoAtivo, status: 'Pendente', origem: novaRotaGestor.origem, destino: novaRotaGestor.destino, observacoes: novaRotaGestor.observacoes, data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: '', dataInicial: '' };
+                
+                // GERAÇÃO DO CÓDIGO DA ROTA (Ex: RT26-NATAL-1311)
+                const hoje = new Date();
+                const yy = hoje.getFullYear().toString().slice(-2);
+                const dia = String(hoje.getDate()).padStart(2, '0');
+                const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+                
+                // Trata a string do destino (remove acentos e espaços, pega a primeira palavra)
+                const destCru = novaRotaGestor.destino.trim().split(' ')[0].toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                
+                const baseId = `RT${yy}-${destCru}-${dia}${mes}`;
+                let finalId = baseId;
+                let counter = 2;
+                
+                // Proteção contra duplicação no mesmo dia
+                while(rotas.find(r => r.id === finalId)) {
+                    finalId = `${baseId}-${counter}`;
+                    counter++;
+                }
+
+                const novaRota = { 
+                    id: finalId, // Usa o novo código visual como ID oficial da Rota!
+                    placa: veiculoAtivo, status: 'Pendente', 
+                    origem: novaRotaGestor.origem, destino: novaRotaGestor.destino, 
+                    observacoes: novaRotaGestor.observacoes, data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: '', dataInicial: '' 
+                };
+                
                 const novasRotas = [...rotas, novaRota];
                 setRotas(novasRotas);
                 salvarNaNuvem(veiculos, despesas, lembretes, novasRotas);
                 setNovaRotaGestor({origem: '', destino: '', observacoes: ''});
-                alert('Rota agendada!');
+                alert(`Rota ${finalId} agendada com sucesso!`);
             };
 
             const iniciarExecucaoRota = (rota) => {
@@ -468,7 +513,7 @@
             };
 
             const removerRota = (id) => {
-                if(confirm("Deseja excluir / cancelar esta rota?")) {
+                if(confirm(`Deseja excluir / cancelar a rota ${id}?`)) {
                     const novasRotas = rotas.filter(r => r.id !== id);
                     setRotas(novasRotas);
                     salvarNaNuvem(veiculos, despesas, lembretes, novasRotas);
@@ -527,7 +572,7 @@
                 }).catch(() => setIsGenerating(false));
             };
 
-            // SELECT DE ROTA VINCULADA (Reutilizável nos formulários)
+            // COMPONENTE VISUAL PARA SELEÇÃO DE ROTA
             const RenderSelectRota = () => (
                 <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl mt-3">
                     <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-2">🛣️ Vincular a uma Viagem (Opcional)</label>
@@ -535,19 +580,21 @@
                         <option value="">-- Sem vínculo específico --</option>
                         {rotasParaVincular.map(r => (
                             <option key={r.id} value={r.id}>
-                                {r.status === 'Pendente' ? '⏳' : '✅'} {r.origem} ➔ {r.destino}
+                                {r.status === 'Pendente' ? '⏳' : '✅'} [{r.id}] {r.origem} ➔ {r.destino}
                             </option>
                         ))}
                     </select>
-                    <p className="text-[10px] text-slate-400 mt-1">Isso ajuda a calcular o custo total de cada viagem.</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Ligue esta despesa a uma viagem para calcular o custo total do frete.</p>
                 </div>
             );
 
+            // ========================================================
+            // RENDERIZAÇÃO
+            // ========================================================
             return (
                 <div className="min-h-screen font-sans text-slate-800 pb-24 md:pb-10 max-w-md md:max-w-4xl mx-auto md:mt-4 shadow-xl bg-white md:rounded-3xl overflow-hidden relative border border-slate-200">
                     
                     <div id="main-ui">
-                        {/* CABEÇALHO SUPERIOR */}
                         <div className="bg-slate-900 text-white p-5 rounded-b-3xl md:rounded-t-3xl md:rounded-b-none shadow-md">
                             <div className="flex justify-between items-center mb-4">
                                 <div className="flex items-center gap-3">
@@ -582,7 +629,6 @@
                             )}
                         </div>
 
-                        {/* ESTADOS DE BLOQUEIO */}
                         {!showCadastro && veiculos.length === 0 && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4">🚘</span>
@@ -610,7 +656,6 @@
                             </div>
                         )}
 
-                        {/* CADASTRO DE VEÍCULO */}
                         {showCadastro && userRole === 'GESTOR' && (
                             <div className="p-5 animate-fade-in space-y-4">
                                 <h2 className="font-bold text-lg text-slate-800">Registar Novo Veículo</h2>
@@ -625,7 +670,6 @@
                             </div>
                         )}
 
-                        {/* BLOCO CENTRAL COM TODOS OS DADOS */}
                         {!showCadastro && veiculos.length > 0 && (!isGlobal || (isGlobal && userRole === 'GESTOR' && (view === 'dashboard' || view === 'historico'))) && (
                             <div className="p-4 space-y-4 mb-16">
                                 
@@ -663,7 +707,6 @@
                                             </div>
                                         </div>
 
-                                        {/* GRÁFICOS */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             {isGlobal && (!dataPorCategoria || dataPorCategoria.labels.length === 0) && (
                                                 <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
@@ -796,7 +839,17 @@
                                         {execucaoRota !== null ? (
                                             <div className="bg-white p-4 rounded-2xl border border-amber-300 shadow-lg relative">
                                                 <button onClick={() => setExecucaoRota(null)} className="absolute top-4 right-4 text-slate-400 font-bold text-xs bg-slate-100 px-2 py-1 rounded">Voltar</button>
-                                                <h3 className="font-bold text-amber-600 mb-4">{execucaoRota.status === 'Concluída' ? '✏️ Editar Viagem' : '▶️ Executar Viagem'}</h3>
+                                                
+                                                <h3 className="font-bold text-amber-600 mb-2">
+                                                    {execucaoRota.status === 'Concluída' ? '✏️ Editar Viagem' : '▶️ Executar Viagem'}
+                                                </h3>
+                                                
+                                                {/* Exibição do ID Customizado ao editar */}
+                                                <div className="mb-4">
+                                                    <span className="bg-slate-100 text-slate-600 text-[10px] font-black px-2 py-1 rounded border border-slate-200">
+                                                        ID: {execucaoRota.id}
+                                                    </span>
+                                                </div>
                                                 
                                                 <div className="space-y-3">
                                                     <div className="grid grid-cols-2 gap-2">
@@ -868,7 +921,8 @@
                                                         <div className="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
                                                             <div>
                                                                 <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase mb-1 inline-block ${r.status === 'Pendente' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>{r.status}</span>
-                                                                <h4 className="font-bold text-slate-800 text-sm leading-tight">{r.origem} ➔ {r.destino}</h4>
+                                                                <span className="text-[10px] font-black text-slate-500 ml-2 bg-slate-100 px-1 rounded border">{r.id}</span>
+                                                                <h4 className="font-bold text-slate-800 text-sm leading-tight mt-1">{r.origem} ➔ {r.destino}</h4>
                                                             </div>
                                                             {r.status === 'Concluída' && (
                                                                 <div className="text-right">
@@ -904,7 +958,7 @@
                                     </div>
                                 )}
 
-                                {/* 3. ABASTECIMENTO */}
+                                {/* 3. ABASTECIMENTO (GESTOR E OPERACIONAL) */}
                                 {view === 'abastecimento' && !isGlobal && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
@@ -997,11 +1051,11 @@
                                     </div>
                                 )}
 
-                                {/* 5. DESPESAS GERAIS DE VIAGEM (NOVO) */}
+                                {/* 5. DESPESAS GERAIS DE VIAGEM */}
                                 {view === 'despesaGeral' && !isGlobal && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
-                                            <h2 className="text-xl font-bold text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar Despesa' : '💸 Nova Despesa de Viagem'}</h2>
+                                            <h2 className="text-xl font-bold text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar Despesa' : '💸 Nova Despesa'}</h2>
                                             {editingDespesaIndex !== null && <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-600 px-3 py-1 rounded-full font-bold">Cancelar</button>}
                                         </div>
                                         <div className="space-y-3">
@@ -1090,10 +1144,9 @@
                                                         </div>
                                                     </div>
                                                     
-                                                    {/* Exibe etiqueta de vínculo se tiver Rota */}
                                                     {d.rotaVinculada && (
                                                         <div className="mb-2">
-                                                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-1 rounded">🛣️ Associado à Viagem: {getNomeRota(d.rotaVinculada)}</span>
+                                                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-1 rounded">🛣️ Associado à Viagem: {d.rotaVinculada}</span>
                                                         </div>
                                                     )}
 
@@ -1124,7 +1177,7 @@
                             </div>
                         )}
 
-                        {/* MENU INFERIOR (SCROLLABLE NO GESTOR) */}
+                        {/* MENU INFERIOR */}
                         {!showCadastro && veiculos.length > 0 && (
                             <div className="fixed md:absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 px-1 py-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 overflow-x-auto hide-scroll flex gap-2">
                                 
