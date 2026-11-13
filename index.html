@@ -4,14 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RUBI FROTA - Gestão Inteligente</title>
-    <!-- Bibliotecas -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    
-    <!-- Biblioteca Gráfica (Chart.js) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <link rel="manifest" href="manifest.json">
@@ -22,11 +19,7 @@
         details > summary::-webkit-details-marker { display: none; }
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fadeIn 0.3s ease forwards; }
     </style>
 </head>
@@ -38,31 +31,25 @@
 
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7N4C1lZperjJZiDlk_SPDEl4OlfvuvbjdePeWKa-qr2ojbu4kmL862ntMjjcZNPrPQQ/exec';
 
-        // COMPONENTE DE GRÁFICOS
         const ChartWrapper = ({ type, data, options }) => {
             const canvasRef = useRef(null);
             const chartInstance = useRef(null);
-
             useEffect(() => {
                 if (typeof window.Chart === 'undefined') return;
                 if (chartInstance.current) chartInstance.current.destroy();
                 const ctx = canvasRef.current.getContext('2d');
-                
-                const finalOptions = { ...options, maintainAspectRatio: false };
-                chartInstance.current = new window.Chart(ctx, { type, data, options: finalOptions });
+                chartInstance.current = new window.Chart(ctx, { type, data, options: { ...options, maintainAspectRatio: false } });
                 return () => { if (chartInstance.current) chartInstance.current.destroy(); };
             }, [type, data, options]);
-
             return (
                 <div className="relative w-full h-[250px] flex items-center justify-center">
-                    {typeof window.Chart === 'undefined' && <span className="text-xs text-red-400">Erro: Biblioteca de gráficos indisponível.</span>}
+                    {typeof window.Chart === 'undefined' && <span className="text-xs text-red-400">Erro: Gráficos indisponíveis.</span>}
                     <canvas ref={canvasRef}></canvas>
                 </div>
             );
         };
 
         function ControleFrotaMulti() {
-            // ESTADOS (HOOKS)
             const [userRole, setUserRole] = useState(null); 
             const [veiculos, setVeiculos] = useState([]);
             const [veiculoAtivo, setVeiculoAtivo] = useState('TODOS'); 
@@ -82,12 +69,12 @@
 
             const [novoVeiculo, setNovoVeiculo] = useState({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
 
+            // RotaVinculada adicionada ao default
             const defaultDespesa = {
                 categoria: 'Mecânica / Manutenção', data: new Date().toISOString().split('T')[0], 
                 valor: '', valorMaoObra: '', valorPecas: '', situacao: 'Concluída',
                 km: '', fornecedor: '', nf: '', descricao: '', pecas: '',
-                litros: '', precoLitro: '',
-                tipoOS: 'Corretiva', localOS: 'Externa', anexos: []
+                litros: '', precoLitro: '', tipoOS: 'Corretiva', localOS: 'Externa', anexos: [], rotaVinculada: ''
             };
 
             const [novaDespesa, setNovaDespesa] = useState(defaultDespesa);
@@ -99,13 +86,22 @@
             const [novaRotaGestor, setNovaRotaGestor] = useState({ origem: '', destino: '', observacoes: '' });
             const [execucaoRota, setExecucaoRota] = useState(null);
 
-            // VARIÁVEIS BASE
             const isGlobal = veiculoAtivo === 'TODOS';
             const veiculoAtual = isGlobal ? null : veiculos.find(v => v.placa === veiculoAtivo);
             const kmAtualNum = veiculoAtual ? parseFloat(veiculoAtual.kmAtual) || 0 : 0;
             const despesasIniciais = isGlobal ? despesas.slice().reverse() : despesas.filter(d => d.placa === veiculoAtivo).reverse();
+            
+            // Rotas disponíveis para vincular (da viatura ativa, últimas 20)
+            const rotasParaVincular = useMemo(() => {
+                if (isGlobal) return [];
+                return rotas.filter(r => r.placa === veiculoAtivo).reverse().slice(0, 20);
+            }, [rotas, veiculoAtivo, isGlobal]);
 
-            // PREPARAÇÃO DOS DADOS GRÁFICOS
+            const getNomeRota = (rotaId) => {
+                const r = rotas.find(rt => rt.id.toString() === rotaId.toString());
+                return r ? `${r.origem} ➔ ${r.destino}` : 'Rota Desconhecida';
+            };
+
             const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b', '#0ea5e9'];
             
             const dataPorCategoria = useMemo(() => {
@@ -138,15 +134,11 @@
 
             const dataConsumo = useMemo(() => {
                 if(isGlobal) return null;
-                const abs = despesasIniciais
-                    .filter(d => d.categoria === 'Abastecimento' && (d.descricao && d.descricao.includes('L a')))
-                    .sort((a, b) => new Date(a.data) - new Date(b.data));
+                const abs = despesasIniciais.filter(d => d.categoria === 'Abastecimento' && (d.descricao && d.descricao.includes('L a'))).sort((a, b) => new Date(a.data) - new Date(b.data));
                 const labels = []; const data = [];
                 for(let i = 1; i < abs.length; i++) {
-                    const kmAtual = parseFloat(abs[i].km);
-                    const kmAnterior = parseFloat(abs[i-1].km);
-                    const match = abs[i].descricao.match(/\[(.*?)L a/);
-                    const litros = match ? parseFloat(match[1]) : 0;
+                    const kmAtual = parseFloat(abs[i].km); const kmAnterior = parseFloat(abs[i-1].km);
+                    const match = abs[i].descricao.match(/\[(.*?)L a/); const litros = match ? parseFloat(match[1]) : 0;
                     if(kmAtual > kmAnterior && litros > 0) {
                         const kml = (kmAtual - kmAnterior) / litros;
                         if(kml > 0 && kml < 30) { labels.push(abs[i].data); data.push(kml.toFixed(2)); }
@@ -164,7 +156,6 @@
                 return { labels: ['Mão de Obra', 'Peças'], datasets: [{ data: [mo, pecas], backgroundColor: ['#8b5cf6', '#ef4444'] }] };
             }, [despesasIniciais, isGlobal]);
 
-            // EFEITOS
             useEffect(() => {
                 const savedRole = localStorage.getItem('rubi_frota_role');
                 if (savedRole) { setUserRole(savedRole); if (savedRole === 'OPERACIONAL') setView('rotas'); }
@@ -172,7 +163,7 @@
             }, []);
 
             useEffect(() => {
-                if ((view === 'os' || view === 'abastecimento') && editingDespesaIndex === null && veiculoAtivo !== 'TODOS') {
+                if ((view === 'os' || view === 'abastecimento' || view === 'despesaGeral') && editingDespesaIndex === null && veiculoAtivo !== 'TODOS') {
                     const rascunhoStr = localStorage.getItem('rubi_frota_rascunho_despesa');
                     if (rascunhoStr) {
                         const parsed = JSON.parse(rascunhoStr);
@@ -181,7 +172,6 @@
                 }
             }, [view, veiculoAtivo, editingDespesaIndex]);
 
-            // NUVEM E BACKUP
             const carregarDaNuvem = async () => {
                 setSyncStatus('⏳ A puxar...');
                 try {
@@ -213,8 +203,7 @@
                 localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots }));
                 try {
                     const response = await fetch(SCRIPT_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({ action: 'sincronizar', veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots })
+                        method: 'POST', body: JSON.stringify({ action: 'sincronizar', veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots })
                     });
                     const result = await response.json();
                     if (result.status === 'sucesso') setSyncStatus('☁️ OK'); else setSyncStatus('⚠️ Erro Sync');
@@ -245,7 +234,6 @@
                 reader.readAsText(file);
             };
 
-            // ECRÃ DE LOGIN
             if (!userRole) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6 animate-fade-in">
@@ -255,7 +243,7 @@
                             <p className="text-slate-500 text-sm mb-10">Selecione o seu perfil de acesso</p>
                             <div className="space-y-4">
                                 <button onClick={() => {
-                                    const pin = prompt("Digite a senha do Gestor (A senha padrão é 1234):");
+                                    const pin = prompt("Digite a senha do Gestor (Padrão: 1234):");
                                     if (pin === '1234') { setUserRole('GESTOR'); localStorage.setItem('rubi_frota_role', 'GESTOR'); setView('dashboard'); } 
                                     else if (pin !== null) alert('Senha incorreta!');
                                 }} className="w-full bg-slate-800 text-white font-bold p-4 rounded-2xl hover:bg-slate-900 transition flex items-center justify-center gap-3 shadow-md">
@@ -272,7 +260,6 @@
                 );
             }
 
-            // FUNÇÕES COMPARTILHADAS E FILTROS
             const despesasFiltradas = despesasIniciais.filter(d => 
                 (d.categoria && d.categoria.toLowerCase().includes(searchTerm.toLowerCase())) || 
                 (d.fornecedor && d.fornecedor.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -360,7 +347,9 @@
                 const indexReal = despesas.indexOf(despesa);
                 setEditingDespesaIndex(indexReal);
                 setNovaDespesa(despesa);
-                setView(despesa.categoria === 'Abastecimento' ? 'abastecimento' : 'os');
+                if (despesa.categoria === 'Abastecimento') setView('abastecimento');
+                else if (['Pedágio', 'Alimentação', 'Estacionamento', 'Hospedagem', 'Outras Despesas'].includes(despesa.categoria)) setView('despesaGeral');
+                else setView('os');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
@@ -428,13 +417,10 @@
                 }
             };
 
-            // ==========================================
-            // LÓGICA DE ROTAS COM DATA/HORA AUTOMÁTICA
-            // ==========================================
             const handleCriarRota = () => {
                 if(isGlobal) return alert('Selecione uma viatura para delegar a rota.');
                 if(!novaRotaGestor.origem || !novaRotaGestor.destino) return alert('Origem e destino são obrigatórios.');
-                const novaRota = { id: Date.now(), placa: veiculoAtivo, status: 'Pendente', origem: novaRotaGestor.origem, destino: novaRotaGestor.destino, observacoes: novaRotaGestor.observacoes, data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: '' };
+                const novaRota = { id: Date.now(), placa: veiculoAtivo, status: 'Pendente', origem: novaRotaGestor.origem, destino: novaRotaGestor.destino, observacoes: novaRotaGestor.observacoes, data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: '', dataInicial: '' };
                 const novasRotas = [...rotas, novaRota];
                 setRotas(novasRotas);
                 salvarNaNuvem(veiculos, despesas, lembretes, novasRotas);
@@ -449,11 +435,9 @@
                     if (parsed.id === rota.id) { setExecucaoRota(parsed); return; }
                 }
                 
-                // GERA DATA E HORA DE PARTIDA AUTOMÁTICA
                 const agora = new Date();
                 const dataStr = agora.toLocaleDateString('pt-BR');
                 const horaStr = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                
                 setExecucaoRota({ ...rota, dataInicial: `${dataStr} ${horaStr}`, kmInicial: kmAtualNum });
             };
 
@@ -468,8 +452,6 @@
                 setVeiculos(novosVeiculos);
                 
                 let novaData = execucaoRota.data;
-                
-                // SE O MOTORISTA ESTÁ A CONCLUIR A ROTA PENDENTE, GERA A DATA/HORA FINAL AUTOMÁTICA
                 if (execucaoRota.status === 'Pendente') {
                     const agora = new Date();
                     const dataStr = agora.toLocaleDateString('pt-BR');
@@ -480,7 +462,6 @@
                 const novasRotas = rotas.map(r => r.id === execucaoRota.id ? { ...r, ...execucaoRota, data: novaData, status: 'Concluída' } : r);
                 setRotas(novasRotas);
                 salvarNaNuvem(novosVeiculos, despesas, lembretes, novasRotas);
-                
                 localStorage.removeItem('rubi_frota_rascunho_rota');
                 setExecucaoRota(null);
                 alert('✅ Viagem salva e concluída com sucesso!');
@@ -546,7 +527,22 @@
                 }).catch(() => setIsGenerating(false));
             };
 
-            // RENDERIZAÇÃO DA INTERFACE PRINCIPAL
+            // SELECT DE ROTA VINCULADA (Reutilizável nos formulários)
+            const RenderSelectRota = () => (
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl mt-3">
+                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-2">🛣️ Vincular a uma Viagem (Opcional)</label>
+                    <select className="w-full border p-2 rounded-lg text-sm bg-white" value={novaDespesa.rotaVinculada || ''} onChange={e => setNovaDespesa({...novaDespesa, rotaVinculada: e.target.value})}>
+                        <option value="">-- Sem vínculo específico --</option>
+                        {rotasParaVincular.map(r => (
+                            <option key={r.id} value={r.id}>
+                                {r.status === 'Pendente' ? '⏳' : '✅'} {r.origem} ➔ {r.destino}
+                            </option>
+                        ))}
+                    </select>
+                    <p className="text-[10px] text-slate-400 mt-1">Isso ajuda a calcular o custo total de cada viagem.</p>
+                </div>
+            );
+
             return (
                 <div className="min-h-screen font-sans text-slate-800 pb-24 md:pb-10 max-w-md md:max-w-4xl mx-auto md:mt-4 shadow-xl bg-white md:rounded-3xl overflow-hidden relative border border-slate-200">
                     
@@ -586,7 +582,7 @@
                             )}
                         </div>
 
-                        {/* ESTADO 1: FROTA VAZIA */}
+                        {/* ESTADOS DE BLOQUEIO */}
                         {!showCadastro && veiculos.length === 0 && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4">🚘</span>
@@ -599,17 +595,13 @@
                                 )}
                             </div>
                         )}
-
-                        {/* ESTADO 2: GESTOR SEM CARRO */}
-                        {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'rotas' || view === 'os' || view === 'abastecimento' || view === 'lembretes') && (
+                        {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'rotas' || view === 'os' || view === 'abastecimento' || view === 'lembretes' || view === 'despesaGeral') && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4 opacity-50">🔒</span>
                                 <h2 className="font-bold text-xl text-slate-700 mb-2">Ação Não Permitida</h2>
                                 <p className="text-sm">Para ver ou preencher formulários, <strong>selecione a matrícula do veículo no menu escuro lá no topo.</strong></p>
                             </div>
                         )}
-
-                        {/* ESTADO 3: OPERACIONAL SEM CARRO */}
                         {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'OPERACIONAL' && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4 opacity-50">👆</span>
@@ -618,7 +610,7 @@
                             </div>
                         )}
 
-                        {/* CADASTRO DE VEÍCULO (SÓ GESTOR) */}
+                        {/* CADASTRO DE VEÍCULO */}
                         {showCadastro && userRole === 'GESTOR' && (
                             <div className="p-5 animate-fade-in space-y-4">
                                 <h2 className="font-bold text-lg text-slate-800">Registar Novo Veículo</h2>
@@ -671,7 +663,7 @@
                                             </div>
                                         </div>
 
-                                        {/* GRÁFICOS INTELIGENTES (Com Empty States para não parecer erro) */}
+                                        {/* GRÁFICOS */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             {isGlobal && (!dataPorCategoria || dataPorCategoria.labels.length === 0) && (
                                                 <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
@@ -786,12 +778,9 @@
                                     </div>
                                 )}
 
-                                {/* =======================================
-                                    2. ROTAS (Com Data/Hora Automática)
-                                ======================================== */}
+                                {/* 2. ROTAS */}
                                 {view === 'rotas' && !isGlobal && (
                                     <div className="animate-fade-in space-y-4">
-                                        {/* Apenas Gestor vê o formulário de Agendar */}
                                         {userRole === 'GESTOR' && execucaoRota === null && (
                                             <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 space-y-3">
                                                 <h3 className="font-bold text-blue-800 text-sm flex items-center gap-2">🗺️ Agendar Rota</h3>
@@ -804,17 +793,12 @@
                                             </div>
                                         )}
 
-                                        {/* Formulário de Execução / Edição */}
                                         {execucaoRota !== null ? (
                                             <div className="bg-white p-4 rounded-2xl border border-amber-300 shadow-lg relative">
                                                 <button onClick={() => setExecucaoRota(null)} className="absolute top-4 right-4 text-slate-400 font-bold text-xs bg-slate-100 px-2 py-1 rounded">Voltar</button>
-                                                
-                                                <h3 className="font-bold text-amber-600 mb-4">
-                                                    {execucaoRota.status === 'Concluída' ? '✏️ Editar Viagem' : '▶️ Executar Viagem'}
-                                                </h3>
+                                                <h3 className="font-bold text-amber-600 mb-4">{execucaoRota.status === 'Concluída' ? '✏️ Editar Viagem' : '▶️ Executar Viagem'}</h3>
                                                 
                                                 <div className="space-y-3">
-                                                    {/* Origem e Destino */}
                                                     <div className="grid grid-cols-2 gap-2">
                                                         <div>
                                                             <label className="text-[9px] font-bold text-slate-500 uppercase">Origem</label>
@@ -826,13 +810,11 @@
                                                         </div>
                                                     </div>
                                                     
-                                                    {/* Observações editáveis */}
                                                     <div>
-                                                        <label className="text-[9px] font-bold text-slate-500 uppercase">Observações (Opcional)</label>
+                                                        <label className="text-[9px] font-bold text-slate-500 uppercase">Observações</label>
                                                         <input className="w-full border p-2 rounded-lg text-sm bg-blue-50" placeholder="Sem observações..." value={execucaoRota.observacoes} onChange={e => setExecucaoRota({...execucaoRota, observacoes: e.target.value})} />
                                                     </div>
-                                                    
-                                                    {/* HORÁRIOS AUTOMÁTICOS */}
+
                                                     <div className="grid grid-cols-1 gap-2 mt-2">
                                                         {execucaoRota.status === 'Pendente' ? (
                                                             <div className="flex justify-between items-center bg-blue-50 p-3 rounded-xl border border-blue-100">
@@ -842,7 +824,7 @@
                                                                 </div>
                                                                 <div className="text-right">
                                                                     <p className="text-[10px] font-bold text-blue-700 uppercase">Chegada</p>
-                                                                    <p className="text-sm font-black text-slate-400 italic">Preenchido ao concluir</p>
+                                                                    <p className="text-sm font-black text-slate-400 italic">Ao concluir</p>
                                                                 </div>
                                                             </div>
                                                         ) : (
@@ -870,9 +852,7 @@
                                                             <input type="number" className="w-full border-2 border-blue-400 p-2 rounded-lg text-sm font-bold" placeholder="Ao chegar" value={execucaoRota.kmFinal} onChange={e => setExecucaoRota({...execucaoRota, kmFinal: e.target.value})} />
                                                         </div>
                                                     </div>
-                                                    
                                                     {formError && <p className="text-red-500 font-bold text-xs text-center">{formError}</p>}
-                                                    
                                                     <div className="flex gap-2 pt-2 border-t border-slate-100">
                                                         <button onClick={handleSalvarRascunhoRota} className="w-1/2 bg-slate-100 border text-slate-600 font-bold p-3 rounded-xl text-sm hover:bg-slate-200">💾 Rascunho</button>
                                                         <button onClick={handleConcluirRota} className="w-1/2 bg-green-600 text-white font-bold p-3 rounded-xl shadow-lg hover:bg-green-700 text-sm">✅ Salvar</button>
@@ -880,11 +860,9 @@
                                                 </div>
                                             </div>
                                         ) : (
-                                            /* Lista de Viagens */
                                             <div className="space-y-3">
                                                 <h3 className="font-bold text-slate-700 text-sm">Diário de Rotas</h3>
                                                 {rotasFiltradas.length === 0 ? <p className="text-xs text-slate-400 text-center py-4">Nenhuma rota registada.</p> : null}
-                                                
                                                 {rotasFiltradas.map(r => (
                                                     <div key={r.id} className={`p-4 rounded-xl border ${r.status === 'Pendente' ? 'bg-white border-amber-300 shadow-sm' : 'bg-slate-50 border-slate-200'}`}>
                                                         <div className="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
@@ -899,11 +877,7 @@
                                                                 </div>
                                                             )}
                                                         </div>
-
-                                                        {r.observacoes && (
-                                                            <p className="text-xs text-slate-600 mb-3 bg-blue-50 p-2 rounded border border-blue-100">📌 {r.observacoes}</p>
-                                                        )}
-
+                                                        {r.observacoes && <p className="text-xs text-slate-600 mb-3 bg-blue-50 p-2 rounded border border-blue-100">📌 {r.observacoes}</p>}
                                                         {r.status === 'Concluída' && (
                                                             <div className="bg-white p-2 rounded text-[11px] border border-slate-200 mb-3 shadow-sm">
                                                                 <p className="text-slate-600 mb-1">📅 <strong>Período:</strong> {r.data}</p>
@@ -912,7 +886,6 @@
                                                                 <p className="text-slate-600">🛣️ <strong>KM:</strong> Inicial <span className="font-bold">{r.kmInicial}</span> ➔ Final <span className="font-bold">{r.kmFinal}</span></p>
                                                             </div>
                                                         )}
-                                                        
                                                         <div className="flex gap-4 items-center">
                                                             {r.status === 'Pendente' && userRole === 'OPERACIONAL' && (
                                                                 <button onClick={() => iniciarExecucaoRota(r)} className="w-full bg-amber-500 text-white font-bold p-2 rounded-lg text-sm">Preencher Rota</button>
@@ -931,7 +904,7 @@
                                     </div>
                                 )}
 
-                                {/* 3. ABASTECIMENTO (GESTOR E OPERACIONAL) */}
+                                {/* 3. ABASTECIMENTO */}
                                 {view === 'abastecimento' && !isGlobal && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
@@ -960,6 +933,8 @@
                                             </div>
                                             <input type="number" className="w-full border p-3 rounded-xl font-bold text-blue-700 text-lg" placeholder="Valor Total (R$)" value={novaDespesa.valor} onChange={e => setNovaDespesa({...novaDespesa, valor: e.target.value})} />
                                             <textarea rows="2" className="w-full border p-3 rounded-xl outline-none" placeholder="Observações..." value={novaDespesa.descricao} onChange={e => setNovaDespesa({...novaDespesa, descricao: e.target.value})}></textarea>
+                                            
+                                            <RenderSelectRota />
                                             
                                             <label className={`block bg-slate-50 border border-dashed p-4 rounded-xl text-center cursor-pointer ${isUploading ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}>
                                                 <span className={`text-sm font-bold ${isUploading ? 'text-amber-600' : 'text-slate-600'}`}>{isUploading ? '⏳ Upload em progresso...' : '📸 Anexar Foto ou PDF'}</span>
@@ -1006,6 +981,8 @@
                                                     <input type="number" className="w-full border p-2 rounded-lg text-sm bg-white" placeholder="Peças (R$)" value={novaDespesa.valorPecas} onChange={e=>setNovaDespesa({...novaDespesa, valorPecas: e.target.value})} />
                                                 </div>
                                             </div>
+
+                                            <RenderSelectRota />
                                             
                                             <label className={`block bg-slate-50 border border-dashed p-4 rounded-xl text-center cursor-pointer ${isUploading ? 'border-amber-400' : 'border-slate-300'}`}>
                                                 <span className={`text-sm font-bold ${isUploading ? 'text-amber-600' : 'text-slate-600'}`}>{isUploading ? '⏳ Upload...' : '📸 Anexar O.S. ou PDF'}</span>
@@ -1020,7 +997,44 @@
                                     </div>
                                 )}
 
-                                {/* 5. LEMBRETES CONFIGURAÇÃO (SÓ GESTOR) */}
+                                {/* 5. DESPESAS GERAIS DE VIAGEM (NOVO) */}
+                                {view === 'despesaGeral' && !isGlobal && (
+                                    <div className="bg-white p-1 animate-fade-in">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h2 className="text-xl font-bold text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar Despesa' : '💸 Nova Despesa de Viagem'}</h2>
+                                            {editingDespesaIndex !== null && <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-600 px-3 py-1 rounded-full font-bold">Cancelar</button>}
+                                        </div>
+                                        <div className="space-y-3">
+                                            <select className="w-full bg-slate-50 p-3 rounded-xl font-bold text-slate-700 border" value={novaDespesa.categoria} onChange={e => setNovaDespesa({...novaDespesa, categoria: e.target.value})}>
+                                                <option value="Pedágio">Pedágio / Portagem</option>
+                                                <option value="Alimentação">Alimentação</option>
+                                                <option value="Estacionamento">Estacionamento</option>
+                                                <option value="Hospedagem">Hospedagem / Hotel</option>
+                                                <option value="Outras Despesas">Outras Despesas</option>
+                                            </select>
+                                            
+                                            <input type="date" className="w-full border p-3 rounded-xl bg-slate-50" value={novaDespesa.data} onChange={e => setNovaDespesa({...novaDespesa, data: e.target.value})} />
+                                            <input className="w-full border p-3 rounded-xl" placeholder="Local / Fornecedor" value={novaDespesa.fornecedor} onChange={e => setNovaDespesa({...novaDespesa, fornecedor: e.target.value})} />
+                                            <input type="number" className="w-full border p-3 rounded-xl font-bold text-blue-700 text-lg" placeholder="Valor (R$)" value={novaDespesa.valor} onChange={e => setNovaDespesa({...novaDespesa, valor: e.target.value})} />
+                                            <textarea rows="2" className="w-full border p-3 rounded-xl outline-none" placeholder="Descrição (Opcional)..." value={novaDespesa.descricao} onChange={e => setNovaDespesa({...novaDespesa, descricao: e.target.value})}></textarea>
+                                            
+                                            <RenderSelectRota />
+                                            
+                                            <label className={`block bg-slate-50 border border-dashed p-4 rounded-xl text-center cursor-pointer ${isUploading ? 'border-amber-400' : 'border-slate-300'}`}>
+                                                <span className={`text-sm font-bold ${isUploading ? 'text-amber-600' : 'text-slate-600'}`}>{isUploading ? '⏳ Upload...' : '📸 Anexar Recibo'}</span>
+                                                <input type="file" accept="image/*,application/pdf" multiple className="hidden" disabled={isUploading} onChange={handleImageUpload} />
+                                            </label>
+                                            {formError && <p className="text-red-500 font-bold text-sm text-center">{formError}</p>}
+                                            
+                                            <div className="flex gap-2 pt-2 border-t border-slate-100">
+                                                <button onClick={handleSalvarRascunhoDespesa} disabled={isUploading} className="w-1/2 bg-slate-100 border text-slate-600 font-bold p-3 rounded-xl text-sm">💾 Rascunho</button>
+                                                <button onClick={handleAddDespesa} disabled={isUploading} className={`w-1/2 text-white font-bold p-3 rounded-xl shadow-lg text-sm ${isUploading ? 'bg-slate-400' : 'bg-emerald-600 hover:bg-emerald-700'}`}>✅ Concluir</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 6. LEMBRETES CONFIGURAÇÃO (SÓ GESTOR) */}
                                 {view === 'lembretes' && !isGlobal && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         <h2 className="text-xl font-bold text-slate-800">🔔 Configurar Alertas</h2>
@@ -1050,7 +1064,7 @@
                                     </div>
                                 )}
 
-                                {/* 6. HISTÓRICO COM PESQUISA (SÓ GESTOR) */}
+                                {/* 7. HISTÓRICO COM PESQUISA (SÓ GESTOR) */}
                                 {view === 'historico' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         <div className="flex justify-between items-center">
@@ -1075,6 +1089,14 @@
                                                             <span className="text-lg font-black text-blue-700 block">{formatCurrency(d.valor)}</span>
                                                         </div>
                                                     </div>
+                                                    
+                                                    {/* Exibe etiqueta de vínculo se tiver Rota */}
+                                                    {d.rotaVinculada && (
+                                                        <div className="mb-2">
+                                                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-1 rounded">🛣️ Associado à Viagem: {getNomeRota(d.rotaVinculada)}</span>
+                                                        </div>
+                                                    )}
+
                                                     <div className="text-sm text-slate-600 space-y-1">
                                                         {d.fornecedor && <p>🏢 <strong>{d.fornecedor}</strong></p>}
                                                         {d.descricao && <p>🔧 {d.descricao}</p>}
@@ -1102,40 +1124,47 @@
                             </div>
                         )}
 
-                        {/* MENU INFERIOR */}
+                        {/* MENU INFERIOR (SCROLLABLE NO GESTOR) */}
                         {!showCadastro && veiculos.length > 0 && (
-                            <div className="fixed md:absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 px-1 py-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 overflow-x-auto hide-scroll">
+                            <div className="fixed md:absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 px-1 py-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 overflow-x-auto hide-scroll flex gap-2">
+                                
                                 {userRole === 'GESTOR' ? (
-                                    <div className="flex justify-between items-center min-w-full gap-1">
-                                        <button onClick={() => { setView('dashboard'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'dashboard' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                    <div className="flex items-center min-w-max px-2 gap-2 mx-auto">
+                                        <button onClick={() => { setView('dashboard'); setEditingDespesaIndex(null); }} className={`flex flex-col items-center justify-center p-2 rounded-xl transition-colors w-16 ${view === 'dashboard' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🏠</span><span className="text-[9px] font-bold uppercase">Painel</span>
                                         </button>
-                                        <button onClick={() => { setView('rotas'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'rotas' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                        <button onClick={() => { setView('rotas'); setEditingDespesaIndex(null); }} className={`flex flex-col items-center justify-center p-2 rounded-xl transition-colors w-16 ${view === 'rotas' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🗺️</span><span className="text-[9px] font-bold uppercase">Rotas</span>
                                         </button>
-                                        <button onClick={() => { setView('abastecimento'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Abastecimento'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                        <button onClick={() => { setView('abastecimento'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Abastecimento'}); }} className={`flex flex-col items-center justify-center p-2 rounded-xl transition-colors w-16 ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">⛽</span><span className="text-[9px] font-bold uppercase">Posto</span>
                                         </button>
-                                        <button onClick={() => { setView('os'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'os' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                        <button onClick={() => { setView('despesaGeral'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Pedágio'}); }} className={`flex flex-col items-center justify-center p-2 rounded-xl transition-colors w-16 ${view === 'despesaGeral' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                            <span className="text-xl mb-0.5">💸</span><span className="text-[9px] font-bold uppercase">Despesas</span>
+                                        </button>
+                                        <button onClick={() => { setView('os'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`flex flex-col items-center justify-center p-2 rounded-xl transition-colors w-16 ${view === 'os' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🔧</span><span className="text-[9px] font-bold uppercase">O.S.</span>
                                         </button>
-                                        <button onClick={() => { setView('historico'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'historico' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                        <button onClick={() => { setView('historico'); setEditingDespesaIndex(null); }} className={`flex flex-col items-center justify-center p-2 rounded-xl transition-colors w-16 ${view === 'historico' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🧾</span><span className="text-[9px] font-bold uppercase">Histórico</span>
                                         </button>
-                                        <button onClick={() => { setView('lembretes'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-xl transition-colors ${view === 'lembretes' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
+                                        <button onClick={() => { setView('lembretes'); setEditingDespesaIndex(null); }} className={`flex flex-col items-center justify-center p-2 rounded-xl transition-colors w-16 ${view === 'lembretes' ? 'text-blue-700 bg-blue-50' : 'text-slate-400'}`}>
                                             <span className="text-xl mb-0.5">🔔</span><span className="text-[9px] font-bold uppercase">Alertas</span>
                                         </button>
                                     </div>
                                 ) : (
                                     <div className="flex justify-center items-center min-w-full gap-2 px-2">
-                                        <button onClick={() => { setView('rotas'); setExecucaoRota(null); }} className={`w-1/3 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'rotas' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
+                                        <button onClick={() => { setView('rotas'); setExecucaoRota(null); }} className={`w-1/4 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'rotas' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
                                             <span className="text-2xl mb-1">🗺️</span><span className="text-[10px] font-bold uppercase">Viagens</span>
                                         </button>
-                                        <button onClick={() => { setView('abastecimento'); setNovaDespesa({...defaultDespesa, categoria: 'Abastecimento'}); }} className={`w-1/3 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
+                                        <button onClick={() => { setView('abastecimento'); setNovaDespesa({...defaultDespesa, categoria: 'Abastecimento'}); }} className={`w-1/4 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
                                             <span className="text-2xl mb-1">⛽</span><span className="text-[10px] font-bold uppercase">Posto</span>
                                         </button>
-                                        <button onClick={() => { setView('os'); setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`w-1/3 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'os' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
-                                            <span className="text-2xl mb-1">🔧</span><span className="text-[10px] font-bold uppercase">Registar O.S.</span>
+                                        <button onClick={() => { setView('despesaGeral'); setNovaDespesa({...defaultDespesa, categoria: 'Pedágio'}); }} className={`w-1/4 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'despesaGeral' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-slate-500 border-transparent'}`}>
+                                            <span className="text-2xl mb-1">💸</span><span className="text-[10px] font-bold uppercase">Despesas</span>
+                                        </button>
+                                        <button onClick={() => { setView('os'); setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`w-1/4 flex flex-col items-center justify-center p-2 rounded-xl transition-colors border ${view === 'os' ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-500 border-transparent'}`}>
+                                            <span className="text-2xl mb-1">🔧</span><span className="text-[10px] font-bold uppercase">O.S.</span>
                                         </button>
                                     </div>
                                 )}
@@ -1154,15 +1183,6 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ControleFrotaMulti />);
-    </script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./service-worker.js')
-                    .then(reg => console.log('✅ Service Worker registado!', reg))
-                    .catch(err => console.error('❌ Erro no Service Worker', err));
-            });
-        }
     </script>
 </body>
 </html>
