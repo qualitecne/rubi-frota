@@ -118,7 +118,7 @@
                 return r ? (r.status === 'Pendente' ? `⏳ ${r.origem} ➔ ${r.destino}` : `${r.id} (${r.origem} ➔ ${r.destino})`) : `Rota ${rotaId}`;
             };
 
-            // PREPARAÇÃO DOS DADOS GRÁFICOS
+            // PREPARAÇÃO DOS DADOS GRÁFICOS (AGORA FUNCIONA PARA GLOBAL E INDIVIDUAL)
             const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b', '#0ea5e9'];
             
             const dataPorCategoria = useMemo(() => {
@@ -256,6 +256,7 @@
                 reader.readAsText(file);
             };
 
+            // ECRÃ DE LOGIN
             if (!userRole) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6 animate-fade-in">
@@ -282,6 +283,7 @@
                 );
             }
 
+            // FUNÇÕES COMPARTILHADAS E FILTROS
             const despesasFiltradas = despesasIniciais.filter(d => 
                 (d.categoria && d.categoria.toLowerCase().includes(searchTerm.toLowerCase())) || 
                 (d.fornecedor && d.fornecedor.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -457,14 +459,11 @@
                 }
             };
 
-            // =====================================
             // LÓGICA DE ROTAS COM TELEMETRIA
-            // =====================================
             const handleCriarRota = () => {
                 if(isGlobal) return alert('Selecione uma viatura para delegar a rota.');
                 if(!novaRotaGestor.origem || !novaRotaGestor.destino) return alert('Origem e destino são obrigatórios.');
                 
-                // O Gestor cria a rota com ID pendente (Timestamp oculto), o ID oficial será gerado no INÍCIO
                 const novaRota = { 
                     id: Date.now().toString(), 
                     placa: veiculoAtivo, status: 'Pendente', 
@@ -486,10 +485,9 @@
                     if (parsed.id === rota.id) { setExecucaoRota(parsed); return; }
                 }
                 
-                // Captura do exato instante de partida
                 const agora = new Date();
                 const tzOffset = agora.getTimezoneOffset() * 60000;
-                const dataLocal = (new Date(agora.getTime() - tzOffset)).toISOString().split('T')[0]; // Data padrao HTML para o Input Date
+                const dataLocal = (new Date(agora.getTime() - tzOffset)).toISOString().split('T')[0];
                 const horaStr = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
                 
                 setExecucaoRota({ ...rota, data: dataLocal, horaInicial: horaStr, kmInicial: kmAtualNum });
@@ -511,7 +509,6 @@
                 let novasDespesas = despesas;
 
                 if (execucaoRota.status === 'Pendente') {
-                    // 1. Gera Código Oficial Baseado na Data do Formulário
                     const [anoStr, mesStr, diaStr] = execucaoRota.data.split('-');
                     const yy = anoStr.slice(-2);
                     const destCru = execucaoRota.destino.trim().split(' ')[0].toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -521,7 +518,6 @@
                     let counter = 2;
                     while(rotas.find(r => r.id === finalId && r.id !== execucaoRota.id)) { finalId = `${baseId}-${counter}`; counter++; }
                     
-                    // 2. Gera a String visual do Período (Chegada agora)
                     const agoraFim = new Date();
                     const horaFim = agoraFim.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
                     const dataFimBr = agoraFim.toLocaleDateString('pt-BR');
@@ -529,12 +525,9 @@
                     
                     novaData = `${dataInBr} ${execucaoRota.horaInicial} até ${dataFimBr} ${horaFim}`;
                     
-                    // 3. Atualiza as Despesas que foram vinculadas enquanto a rota estava com ID temporário
                     if (finalId !== execucaoRota.id) {
                         novasDespesas = despesas.map(d => {
-                            if (String(d.rotaVinculada) === String(execucaoRota.id)) {
-                                return { ...d, rotaVinculada: finalId };
-                            }
+                            if (String(d.rotaVinculada) === String(execucaoRota.id)) return { ...d, rotaVinculada: finalId };
                             return d;
                         });
                         setDespesas(novasDespesas);
@@ -630,7 +623,6 @@
                 <div className="min-h-screen font-sans text-slate-800 pb-24 md:pb-10 max-w-md md:max-w-4xl mx-auto md:mt-4 shadow-xl bg-white md:rounded-3xl overflow-hidden relative border border-slate-200">
                     
                     <div id="main-ui">
-                        {/* CABEÇALHO SUPERIOR */}
                         <div className="bg-slate-900 text-white p-5 rounded-b-3xl md:rounded-t-3xl md:rounded-b-none shadow-md">
                             <div className="flex justify-between items-center mb-4">
                                 <div className="flex items-center gap-3">
@@ -670,7 +662,6 @@
                             )}
                         </div>
 
-                        {/* ESTADOS DE BLOQUEIO */}
                         {!showCadastro && !showCadastroFunc && veiculos.length === 0 && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4">🚘</span>
@@ -698,7 +689,6 @@
                             </div>
                         )}
 
-                        {/* CADASTRO DE EQUIPA */}
                         {showCadastroFunc && userRole === 'GESTOR' && (
                             <div className="p-5 animate-fade-in space-y-4">
                                 <h2 className="font-bold text-lg text-slate-800">👥 Registar Membro da Equipa</h2>
@@ -731,7 +721,6 @@
                             </div>
                         )}
 
-                        {/* CADASTRO DE VEÍCULO (SÓ GESTOR) */}
                         {showCadastro && userRole === 'GESTOR' && (
                             <div className="p-5 animate-fade-in space-y-4">
                                 <h2 className="font-bold text-lg text-slate-800">Registar Novo Veículo</h2>
@@ -750,13 +739,13 @@
                             </div>
                         )}
 
-                        {/* BLOCO CENTRAL COM TODOS OS DADOS */}
                         {!showCadastro && !showCadastroFunc && veiculos.length > 0 && (!isGlobal || (isGlobal && userRole === 'GESTOR' && (view === 'dashboard' || view === 'historico'))) && (
                             <div className="p-4 space-y-4 mb-16">
                                 
                                 {/* 1. DASHBOARD */}
                                 {view === 'dashboard' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
+                                        
                                         {isGlobal && (
                                             <div className="flex justify-between items-center bg-slate-50 border border-slate-200 p-2 rounded-xl">
                                                 <span className="text-[10px] font-bold text-slate-500 px-2">SEGURANÇA (JSON)</span>
@@ -768,6 +757,7 @@
                                                 </div>
                                             </div>
                                         )}
+
                                         <div className="bg-slate-800 text-white p-4 rounded-2xl shadow-sm flex flex-col gap-3">
                                             <div className="flex justify-between items-center border-b border-slate-700 pb-3">
                                                 <div>
@@ -788,48 +778,51 @@
                                             </div>
                                         </div>
 
-                                        {/* GRÁFICOS */}
+                                        {/* GRÁFICOS INTELIGENTES (Com Empty States independentes) */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {isGlobal && (!dataPorCategoria || dataPorCategoria.labels.length === 0) && (
-                                                <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
-                                                    <span className="text-3xl block mb-2 opacity-50">📊</span>
-                                                    <p className="text-slate-500 text-sm font-bold">Os gráficos da empresa aparecerão aqui assim que registar a primeira Despesa ou Abastecimento.</p>
-                                                </div>
-                                            )}
-                                            {isGlobal && dataPorCategoria && dataPorCategoria.labels.length > 0 && (
+                                            
+                                            {/* Gráfico 1: Categorias (Aparece Global e Individual) */}
+                                            {dataPorCategoria && dataPorCategoria.labels.length > 0 ? (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Distribuição de Custos</h3>
                                                     <ChartWrapper type="doughnut" data={dataPorCategoria} options={{ plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: {size: 10} } } } }} />
                                                 </div>
+                                            ) : (
+                                                <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
+                                                    <span className="text-3xl block mb-2 opacity-50">📊</span>
+                                                    <p className="text-slate-500 text-sm font-bold">Os gráficos {isGlobal ? 'da empresa' : 'deste veículo'} aparecerão aqui assim que registar a primeira despesa.</p>
+                                                </div>
                                             )}
+
+                                            {/* Gráfico 2: Ranking (Apenas Global) */}
                                             {isGlobal && dataRankingVeiculos && dataRankingVeiculos.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Top Custos por Viatura</h3>
                                                     <ChartWrapper type="bar" data={dataRankingVeiculos} options={{ indexAxis: 'y', plugins: { legend: { display: false } } }} />
                                                 </div>
                                             )}
-                                            {isGlobal && dataEvolucaoMensal && dataEvolucaoMensal.labels.length > 0 && (
+
+                                            {/* Gráfico 3: Manutenção (Apenas Individual) */}
+                                            {!isGlobal && dataPecasMO && (
+                                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                                                    <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Custo de Manutenção</h3>
+                                                    <ChartWrapper type="doughnut" data={dataPecasMO} options={{ plugins: { legend: { position: 'bottom' } } }} />
+                                                </div>
+                                            )}
+
+                                            {/* Gráfico 4: Evolução Mensal (Global e Individual) */}
+                                            {dataEvolucaoMensal && dataEvolucaoMensal.labels.length > 0 && (
                                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Evolução Mensal de Gastos</h3>
                                                     <ChartWrapper type="bar" data={dataEvolucaoMensal} options={{}} />
                                                 </div>
                                             )}
-                                            {!isGlobal && (!dataConsumo || dataConsumo.labels.length === 0) && (!dataPecasMO) && (
-                                                <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
-                                                    <span className="text-3xl block mb-2 opacity-50">📉</span>
-                                                    <p className="text-slate-500 text-sm font-bold">Os gráficos deste veículo aparecerão aqui quando efetuar o primeiro abastecimento (com litros) ou O.S.</p>
-                                                </div>
-                                            )}
+
+                                            {/* Gráfico 5: Consumo (Apenas Individual e se tiver dados) */}
                                             {!isGlobal && dataConsumo && dataConsumo.labels.length > 0 && (
-                                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
                                                     <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Evolução de Consumo (KM/L)</h3>
                                                     <ChartWrapper type="line" data={dataConsumo} options={{ scales: { y: { beginAtZero: false } } }} />
-                                                </div>
-                                            )}
-                                            {!isGlobal && dataPecasMO && (
-                                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-                                                    <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Custo de Manutenção</h3>
-                                                    <ChartWrapper type="doughnut" data={dataPecasMO} options={{ plugins: { legend: { position: 'bottom' } } }} />
                                                 </div>
                                             )}
                                         </div>
@@ -904,7 +897,7 @@
                                 )}
 
                                 {/* =======================================
-                                    2. ROTAS
+                                    2. ROTAS (Com Resumo Financeiro da Rota)
                                 ======================================== */}
                                 {view === 'rotas' && !isGlobal && (
                                     <div className="animate-fade-in space-y-4">
@@ -1014,43 +1007,70 @@
                                             <div className="space-y-3">
                                                 <h3 className="font-bold text-slate-700 text-sm">Diário de Rotas</h3>
                                                 {rotasFiltradas.length === 0 ? <p className="text-xs text-slate-400 text-center py-4">Nenhuma rota registada.</p> : null}
-                                                {rotasFiltradas.map(r => (
-                                                    <div key={r.id} className={`p-4 rounded-xl border ${r.status === 'Pendente' ? 'bg-white border-amber-300 shadow-sm' : 'bg-slate-50 border-slate-200'}`}>
-                                                        <div className="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
-                                                            <div>
-                                                                <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase mb-1 inline-block ${r.status === 'Pendente' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>{r.status}</span>
-                                                                {r.status === 'Concluída' && <span className="text-[10px] font-black text-slate-500 ml-2 bg-slate-100 px-1 rounded border">{r.id}</span>}
-                                                                <h4 className="font-bold text-slate-800 text-sm leading-tight mt-1">{r.origem} ➔ {r.destino}</h4>
+                                                
+                                                {rotasFiltradas.map(r => {
+                                                    // CÁLCULO DAS DESPESAS VINCULADAS A ESTA ROTA
+                                                    const despesasDaRota = despesasIniciais.filter(d => String(d.rotaVinculada) === String(r.id));
+                                                    const totalDespesasRota = despesasDaRota.reduce((sum, d) => sum + (parseFloat(d.valor) || 0), 0);
+                                                    
+                                                    return (
+                                                        <div key={r.id} className={`p-4 rounded-xl border ${r.status === 'Pendente' ? 'bg-white border-amber-300 shadow-sm' : 'bg-slate-50 border-slate-200'}`}>
+                                                            <div className="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
+                                                                <div>
+                                                                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase mb-1 inline-block ${r.status === 'Pendente' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>{r.status}</span>
+                                                                    {r.status === 'Concluída' && <span className="text-[10px] font-black text-slate-500 ml-2 bg-slate-100 px-1 rounded border">{r.id}</span>}
+                                                                    <h4 className="font-bold text-slate-800 text-sm leading-tight mt-1">{r.origem} ➔ {r.destino}</h4>
+                                                                </div>
+                                                                {r.status === 'Concluída' && (
+                                                                    <div className="text-right">
+                                                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Distância</p>
+                                                                        <p className="font-black text-slate-700">{Math.max(0, r.kmFinal - r.kmInicial).toLocaleString()} km</p>
+                                                                    </div>
+                                                                )}
                                                             </div>
+                                                            
+                                                            {r.observacoes && <p className="text-xs text-slate-600 mb-3 bg-blue-50 p-2 rounded border border-blue-100">📌 {r.observacoes}</p>}
+                                                            
                                                             {r.status === 'Concluída' && (
-                                                                <div className="text-right">
-                                                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Distância</p>
-                                                                    <p className="font-black text-slate-700">{Math.max(0, r.kmFinal - r.kmInicial).toLocaleString()} km</p>
+                                                                <div className="bg-white p-2 rounded text-[11px] border border-slate-200 mb-3 shadow-sm">
+                                                                    <p className="text-slate-600 mb-1">📅 <strong>Período:</strong> {r.data}</p>
+                                                                    <p className="text-slate-600 mb-1">👨‍✈️ <strong>Motorista:</strong> {r.motorista}</p>
+                                                                    {(r.ajudante1 || r.ajudante2) && <p className="text-slate-600 mb-1">👥 <strong>Ajudantes:</strong> {r.ajudante1} {r.ajudante2 ? `/ ${r.ajudante2}` : ''}</p>}
+                                                                    <p className="text-slate-600">🛣️ <strong>KM:</strong> Inicial <span className="font-bold">{r.kmInicial}</span> ➔ Final <span className="font-bold">{r.kmFinal}</span></p>
                                                                 </div>
                                                             )}
-                                                        </div>
-                                                        {r.observacoes && <p className="text-xs text-slate-600 mb-3 bg-blue-50 p-2 rounded border border-blue-100">📌 {r.observacoes}</p>}
-                                                        {r.status === 'Concluída' && (
-                                                            <div className="bg-white p-2 rounded text-[11px] border border-slate-200 mb-3 shadow-sm">
-                                                                <p className="text-slate-600 mb-1">📅 <strong>Período:</strong> {r.data}</p>
-                                                                <p className="text-slate-600 mb-1">👨‍✈️ <strong>Motorista:</strong> {r.motorista}</p>
-                                                                {(r.ajudante1 || r.ajudante2) && <p className="text-slate-600 mb-1">👥 <strong>Ajudantes:</strong> {r.ajudante1} {r.ajudante2 ? `/ ${r.ajudante2}` : ''}</p>}
-                                                                <p className="text-slate-600">🛣️ <strong>KM:</strong> Inicial <span className="font-bold">{r.kmInicial}</span> ➔ Final <span className="font-bold">{r.kmFinal}</span></p>
+                                                            
+                                                            {/* RESUMO FINANCEIRO DA ROTA */}
+                                                            {despesasDaRota.length > 0 && (
+                                                                <div className="bg-emerald-50 p-2 rounded text-[11px] border border-emerald-200 mb-3 shadow-sm">
+                                                                    <p className="text-emerald-800 font-bold mb-1 border-b border-emerald-200 pb-1">💰 Resumo Financeiro da Viagem</p>
+                                                                    {despesasDaRota.map((d, idx) => (
+                                                                        <div key={idx} className="flex justify-between items-center mb-0.5">
+                                                                            <span className="text-emerald-700 truncate mr-2">{d.categoria} {d.fornecedor ? `(${d.fornecedor})` : ''}</span>
+                                                                            <span className="font-bold text-emerald-900">{formatCurrency(d.valor)}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                    <div className="flex justify-between items-center mt-1 pt-1 border-t border-emerald-200">
+                                                                        <span className="text-emerald-800 font-black uppercase text-[10px]">Custo Total</span>
+                                                                        <span className="font-black text-emerald-900 text-sm">{formatCurrency(totalDespesasRota)}</span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            
+                                                            <div className="flex gap-4 items-center">
+                                                                {r.status === 'Pendente' && userRole === 'OPERACIONAL' && (
+                                                                    <button onClick={() => iniciarExecucaoRota(r)} className="w-full bg-amber-500 text-white font-bold p-2 rounded-lg text-sm">Preencher Rota</button>
+                                                                )}
+                                                                {userRole === 'GESTOR' && (
+                                                                    <div className="flex gap-4 w-full pt-1">
+                                                                        <button onClick={() => { setExecucaoRota(r); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-amber-600 text-xs font-bold underline">Editar</button>
+                                                                        <button onClick={() => removerRota(r.id)} className="text-red-500 text-xs font-bold underline">Excluir</button>
+                                                                    </div>
+                                                                )}
                                                             </div>
-                                                        )}
-                                                        <div className="flex gap-4 items-center">
-                                                            {r.status === 'Pendente' && userRole === 'OPERACIONAL' && (
-                                                                <button onClick={() => iniciarExecucaoRota(r)} className="w-full bg-amber-500 text-white font-bold p-2 rounded-lg text-sm">Preencher Rota</button>
-                                                            )}
-                                                            {userRole === 'GESTOR' && (
-                                                                <div className="flex gap-4 w-full pt-1">
-                                                                    <button onClick={() => { setExecucaoRota(r); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-amber-600 text-xs font-bold underline">Editar</button>
-                                                                    <button onClick={() => removerRota(r.id)} className="text-red-500 text-xs font-bold underline">Excluir</button>
-                                                                </div>
-                                                            )}
                                                         </div>
-                                                    </div>
-                                                ))}
+                                                    )
+                                                })}
                                             </div>
                                         )}
                                     </div>
@@ -1103,7 +1123,7 @@
                                     </div>
                                 )}
 
-                                {/* 4. OR একদিকে SERVIÇO */}
+                                {/* 4. ORDEM DE SERVIÇO */}
                                 {view === 'os' && !isGlobal && (
                                     <div className="bg-white p-1 animate-fade-in">
                                         <div className="flex justify-between items-center mb-4">
@@ -1334,15 +1354,6 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ControleFrotaMulti />);
-    </script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./service-worker.js')
-                    .then(reg => console.log('✅ Service Worker registado!', reg))
-                    .catch(err => console.error('❌ Erro no Service Worker', err));
-            });
-        }
     </script>
 </body>
 </html>
