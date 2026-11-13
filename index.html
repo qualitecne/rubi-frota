@@ -69,9 +69,12 @@
             const [despesas, setDespesas] = useState([]);
             const [lembretes, setLembretes] = useState([]);
             const [rotas, setRotas] = useState([]);
+            const [funcionarios, setFuncionarios] = useState([]); // NOVO ESTADO DA EQUIPA
             
             const [view, setView] = useState('dashboard');
             const [showCadastro, setShowCadastro] = useState(false);
+            const [showCadastroFunc, setShowCadastroFunc] = useState(false); // ESTADO P/ MOSTRAR FORM DE FUNCIONÁRIO
+            
             const [isGenerating, setIsGenerating] = useState(false);
             const [formError, setFormError] = useState('');
             const [syncStatus, setSyncStatus] = useState('☁️ A conectar...');
@@ -81,6 +84,8 @@
             const [searchTerm, setSearchTerm] = useState('');
 
             const [novoVeiculo, setNovoVeiculo] = useState({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
+            
+            const [novoFuncionario, setNovoFuncionario] = useState({ nome: '', cargo: 'Motorista' }); // NOVO FUNCIONÁRIO
 
             const defaultDespesa = {
                 categoria: 'Mecânica / Manutenção', data: new Date().toISOString().split('T')[0], 
@@ -197,6 +202,7 @@
                         if (result.dados.despesas) setDespesas(result.dados.despesas);
                         if (result.dados.lembretes) setLembretes(result.dados.lembretes);
                         if (result.dados.rotas) setRotas(result.dados.rotas);
+                        if (result.dados.funcionarios) setFuncionarios(result.dados.funcionarios);
                         setSyncStatus('☁️ OK');
                         localStorage.setItem('rubi_frota_db', JSON.stringify(result.dados));
                     }
@@ -209,16 +215,17 @@
                         if (parsed.despesas) setDespesas(parsed.despesas);
                         if (parsed.lembretes) setLembretes(parsed.lembretes);
                         if (parsed.rotas) setRotas(parsed.rotas);
+                        if (parsed.funcionarios) setFuncionarios(parsed.funcionarios);
                     }
                 }
             };
 
-            const salvarNaNuvem = async (veics, desps, lembs, rots) => {
+            const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) => {
                 setSyncStatus('⏳ A guardar...');
-                localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots }));
+                localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots, funcionarios: funcs }));
                 try {
                     const response = await fetch(SCRIPT_URL, {
-                        method: 'POST', body: JSON.stringify({ action: 'sincronizar', veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots })
+                        method: 'POST', body: JSON.stringify({ action: 'sincronizar', veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots, funcionarios: funcs })
                     });
                     const result = await response.json();
                     if (result.status === 'sucesso') setSyncStatus('☁️ OK'); else setSyncStatus('⚠️ Erro Sync');
@@ -226,7 +233,7 @@
             };
 
             const exportarBackup = () => {
-                const dados = { veiculos, despesas, lembretes, rotas };
+                const dados = { veiculos, despesas, lembretes, rotas, funcionarios };
                 const blob = new Blob([JSON.stringify(dados)], {type: "application/json"});
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a'); a.href = url; a.download = `Backup_RUBI_FROTA_${new Date().toISOString().split('T')[0]}.json`; a.click();
@@ -242,13 +249,15 @@
                         if (parsed.despesas) setDespesas(parsed.despesas);
                         if (parsed.lembretes) setLembretes(parsed.lembretes);
                         if (parsed.rotas) setRotas(parsed.rotas);
-                        salvarNaNuvem(parsed.veiculos || [], parsed.despesas || [], parsed.lembretes || [], parsed.rotas || []);
+                        if (parsed.funcionarios) setFuncionarios(parsed.funcionarios);
+                        salvarNaNuvem(parsed.veiculos || [], parsed.despesas || [], parsed.lembretes || [], parsed.rotas || [], parsed.funcionarios || []);
                         alert("✅ Backup restaurado com sucesso!");
                     } catch(err) { alert("❌ Arquivo de backup inválido!"); }
                 };
                 reader.readAsText(file);
             };
 
+            // ECRÃ DE LOGIN
             if (!userRole) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6 animate-fade-in">
@@ -293,6 +302,26 @@
                 const veiculoAlvo = veiculos.find(v => v.placa === placaVeiculo);
                 if (veiculoAlvo && novoKm > (parseFloat(veiculoAlvo.kmAtual) || 0)) { return veiculos.map(v => v.placa === placaVeiculo ? { ...v, kmAtual: novoKm } : v); }
                 return veiculos;
+            };
+
+            // =====================================
+            // LÓGICA DE FUNCIONÁRIOS (EQUIPA)
+            // =====================================
+            const handleAddFuncionario = () => {
+                if (!novoFuncionario.nome) return alert('O nome do colaborador é obrigatório!');
+                if (funcionarios.find(f => f.nome.toLowerCase() === novoFuncionario.nome.toLowerCase())) return alert('Membro já registado!');
+                const novosFuncs = [...funcionarios, novoFuncionario];
+                setFuncionarios(novosFuncs);
+                salvarNaNuvem(veiculos, despesas, lembretes, rotas, novosFuncs);
+                setNovoFuncionario({ nome: '', cargo: 'Motorista' });
+            };
+
+            const removerFuncionario = (nome) => {
+                if(confirm(`Deseja remover ${nome} da equipa?`)) {
+                    const novosFuncs = funcionarios.filter(f => f.nome !== nome);
+                    setFuncionarios(novosFuncs);
+                    salvarNaNuvem(veiculos, despesas, lembretes, rotas, novosFuncs);
+                }
             };
 
             const handleAddVeiculo = () => {
@@ -433,35 +462,23 @@
                 }
             };
 
-            // ========================================================
-            // LÓGICA DE ROTAS COM ID CUSTOMIZADO E INTELIGENTE
-            // ========================================================
             const handleCriarRota = () => {
                 if(isGlobal) return alert('Selecione uma viatura para delegar a rota.');
                 if(!novaRotaGestor.origem || !novaRotaGestor.destino) return alert('Origem e destino são obrigatórios.');
                 
-                // GERAÇÃO DO CÓDIGO DA ROTA (Ex: RT26-NATAL-1311)
                 const hoje = new Date();
                 const yy = hoje.getFullYear().toString().slice(-2);
                 const dia = String(hoje.getDate()).padStart(2, '0');
                 const mes = String(hoje.getMonth() + 1).padStart(2, '0');
-                
-                // Trata a string do destino (remove acentos e espaços, pega a primeira palavra)
                 const destCru = novaRotaGestor.destino.trim().split(' ')[0].toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
                 
                 const baseId = `RT${yy}-${destCru}-${dia}${mes}`;
                 let finalId = baseId;
                 let counter = 2;
-                
-                // Proteção contra duplicação no mesmo dia
-                while(rotas.find(r => r.id === finalId)) {
-                    finalId = `${baseId}-${counter}`;
-                    counter++;
-                }
+                while(rotas.find(r => r.id === finalId)) { finalId = `${baseId}-${counter}`; counter++; }
 
                 const novaRota = { 
-                    id: finalId, // Usa o novo código visual como ID oficial da Rota!
-                    placa: veiculoAtivo, status: 'Pendente', 
+                    id: finalId, placa: veiculoAtivo, status: 'Pendente', 
                     origem: novaRotaGestor.origem, destino: novaRotaGestor.destino, 
                     observacoes: novaRotaGestor.observacoes, data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: '', dataInicial: '' 
                 };
@@ -572,7 +589,6 @@
                 }).catch(() => setIsGenerating(false));
             };
 
-            // COMPONENTE VISUAL PARA SELEÇÃO DE ROTA
             const RenderSelectRota = () => (
                 <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl mt-3">
                     <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-2">🛣️ Vincular a uma Viagem (Opcional)</label>
@@ -588,13 +604,12 @@
                 </div>
             );
 
-            // ========================================================
-            // RENDERIZAÇÃO
-            // ========================================================
+            // RENDERIZAÇÃO DA INTERFACE PRINCIPAL
             return (
                 <div className="min-h-screen font-sans text-slate-800 pb-24 md:pb-10 max-w-md md:max-w-4xl mx-auto md:mt-4 shadow-xl bg-white md:rounded-3xl overflow-hidden relative border border-slate-200">
                     
                     <div id="main-ui">
+                        {/* CABEÇALHO SUPERIOR */}
                         <div className="bg-slate-900 text-white p-5 rounded-b-3xl md:rounded-t-3xl md:rounded-b-none shadow-md">
                             <div className="flex justify-between items-center mb-4">
                                 <div className="flex items-center gap-3">
@@ -605,15 +620,20 @@
                                 </div>
                                 <div className="flex gap-2">
                                     {userRole === 'GESTOR' && (
-                                        <button onClick={() => setShowCadastro(!showCadastro)} className="bg-blue-600 hover:bg-blue-500 text-[10px] px-3 py-1.5 rounded-full font-bold">
-                                            {showCadastro ? 'Cancelar' : '+ Veículo'}
-                                        </button>
+                                        <>
+                                            <button onClick={() => { setShowCadastro(!showCadastro); setShowCadastroFunc(false); }} className="bg-blue-600 hover:bg-blue-500 text-[10px] px-3 py-1.5 rounded-full font-bold">
+                                                {showCadastro ? 'Voltar' : '+ Veículo'}
+                                            </button>
+                                            <button onClick={() => { setShowCadastroFunc(!showCadastroFunc); setShowCadastro(false); }} className="bg-emerald-600 hover:bg-emerald-500 text-[10px] px-3 py-1.5 rounded-full font-bold text-white">
+                                                {showCadastroFunc ? 'Voltar' : '+ Equipa'}
+                                            </button>
+                                        </>
                                     )}
                                     <button onClick={() => { if(confirm("Deseja sair da sua conta?")) { setUserRole(null); localStorage.removeItem('rubi_frota_role'); setView('dashboard'); } }} className="bg-red-500 hover:bg-red-600 text-[10px] font-bold px-3 py-1.5 rounded-full">Sair</button>
                                 </div>
                             </div>
                             
-                            {!showCadastro && veiculos.length > 0 && (
+                            {!showCadastro && !showCadastroFunc && veiculos.length > 0 && (
                                 <div className="bg-slate-800 rounded-2xl p-2 flex items-center border border-slate-700">
                                     <span className="pl-3 text-slate-400 text-xl">{isGlobal ? '🌐' : '🚘'}</span>
                                     <select className="w-full p-2 bg-transparent text-white font-bold outline-none appearance-none" 
@@ -629,7 +649,8 @@
                             )}
                         </div>
 
-                        {!showCadastro && veiculos.length === 0 && (
+                        {/* ESTADO 1: FROTA VAZIA */}
+                        {!showCadastro && !showCadastroFunc && veiculos.length === 0 && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4">🚘</span>
                                 <h2 className="font-bold text-xl text-slate-700 mb-2">Frota Vazia</h2>
@@ -641,14 +662,18 @@
                                 )}
                             </div>
                         )}
-                        {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'rotas' || view === 'os' || view === 'abastecimento' || view === 'lembretes' || view === 'despesaGeral') && (
+
+                        {/* ESTADO 2: GESTOR SEM CARRO */}
+                        {!showCadastro && !showCadastroFunc && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'rotas' || view === 'os' || view === 'abastecimento' || view === 'lembretes' || view === 'despesaGeral') && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4 opacity-50">🔒</span>
                                 <h2 className="font-bold text-xl text-slate-700 mb-2">Ação Não Permitida</h2>
                                 <p className="text-sm">Para ver ou preencher formulários, <strong>selecione a matrícula do veículo no menu escuro lá no topo.</strong></p>
                             </div>
                         )}
-                        {!showCadastro && isGlobal && veiculos.length > 0 && userRole === 'OPERACIONAL' && (
+
+                        {/* ESTADO 3: OPERACIONAL SEM CARRO */}
+                        {!showCadastro && !showCadastroFunc && isGlobal && veiculos.length > 0 && userRole === 'OPERACIONAL' && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4 opacity-50">👆</span>
                                 <h2 className="font-bold text-xl text-slate-700 mb-2">Selecione a Viatura</h2>
@@ -656,6 +681,40 @@
                             </div>
                         )}
 
+                        {/* CADASTRO DE EQUIPA (NOVO) */}
+                        {showCadastroFunc && userRole === 'GESTOR' && (
+                            <div className="p-5 animate-fade-in space-y-4">
+                                <h2 className="font-bold text-lg text-slate-800">👥 Registar Membro da Equipa</h2>
+                                <p className="text-xs text-slate-500 mb-2">As pessoas registadas aqui aparecerão nas listas suspensas (dropdowns) de motoristas e ajudantes.</p>
+                                
+                                <input className="w-full border p-3 rounded-xl outline-none" placeholder="Nome Completo do Colaborador" value={novoFuncionario.nome} onChange={e => setNovoFuncionario({...novoFuncionario, nome: e.target.value})} />
+                                <select className="w-full border p-3 rounded-xl outline-none bg-white font-bold text-slate-700" value={novoFuncionario.cargo} onChange={e => setNovoFuncionario({...novoFuncionario, cargo: e.target.value})}>
+                                    <option value="Motorista">Apenas Motorista</option>
+                                    <option value="Ajudante">Apenas Ajudante</option>
+                                    <option value="Ambos">Motorista & Ajudante</option>
+                                </select>
+                                <button onClick={handleAddFuncionario} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold p-4 rounded-xl shadow-lg">Guardar Colaborador</button>
+
+                                <div className="mt-8">
+                                    <h3 className="font-bold text-sm text-slate-600 mb-3 border-b pb-2">Equipa Atual ({funcionarios.length})</h3>
+                                    {funcionarios.length === 0 ? <p className="text-xs text-slate-400">Ninguém registado.</p> : (
+                                        <div className="space-y-2">
+                                            {funcionarios.map(f => (
+                                                <div key={f.nome} className="flex justify-between items-center bg-white p-3 rounded-xl border shadow-sm">
+                                                    <div>
+                                                        <p className="font-bold text-sm text-slate-800">{f.nome}</p>
+                                                        <p className="text-[10px] uppercase font-bold text-slate-400">{f.cargo}</p>
+                                                    </div>
+                                                    <button onClick={() => removerFuncionario(f.nome)} className="text-red-500 text-xs font-bold underline">Excluir</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* CADASTRO DE VEÍCULO (SÓ GESTOR) */}
                         {showCadastro && userRole === 'GESTOR' && (
                             <div className="p-5 animate-fade-in space-y-4">
                                 <h2 className="font-bold text-lg text-slate-800">Registar Novo Veículo</h2>
@@ -663,19 +722,27 @@
                                 <input className="w-full border p-3 rounded-xl outline-none uppercase" placeholder="Matrícula / Placa" value={novoVeiculo.placa} onChange={e => setNovoVeiculo({...novoVeiculo, placa: e.target.value})} />
                                 <input type="number" className="w-full border p-3 rounded-xl outline-none" placeholder="KM Inicial (Odómetro)" value={novoVeiculo.kmAtual} onChange={e => setNovoVeiculo({...novoVeiculo, kmAtual: e.target.value})} />
                                 <div className="grid grid-cols-2 gap-2">
-                                    <input className="w-full border p-3 rounded-xl outline-none" placeholder="Motorista Principal" value={novoVeiculo.motorista} onChange={e => setNovoVeiculo({...novoVeiculo, motorista: e.target.value})} />
-                                    <input className="w-full border p-3 rounded-xl outline-none" placeholder="Centro de Custo" value={novoVeiculo.centroCusto} onChange={e => setNovoVeiculo({...novoVeiculo, centroCusto: e.target.value})} />
+                                    {/* Select de Motorista no Veículo */}
+                                    <select className="w-full border p-3 rounded-xl outline-none bg-white text-sm" value={novoVeiculo.motorista} onChange={e => setNovoVeiculo({...novoVeiculo, motorista: e.target.value})}>
+                                        <option value="" disabled>Selecione Motorista</option>
+                                        <option value="Sem Motorista Fixo">-- Sem Motorista Fixo --</option>
+                                        {funcionarios.filter(f => f.cargo === 'Motorista' || f.cargo === 'Ambos').map(f => <option key={f.nome} value={f.nome}>{f.nome}</option>)}
+                                    </select>
+                                    <input className="w-full border p-3 rounded-xl outline-none text-sm" placeholder="Centro de Custo" value={novoVeiculo.centroCusto} onChange={e => setNovoVeiculo({...novoVeiculo, centroCusto: e.target.value})} />
                                 </div>
                                 <button onClick={handleAddVeiculo} className="w-full bg-blue-700 text-white font-bold p-4 rounded-xl shadow-lg">Guardar Veículo</button>
                             </div>
                         )}
 
-                        {!showCadastro && veiculos.length > 0 && (!isGlobal || (isGlobal && userRole === 'GESTOR' && (view === 'dashboard' || view === 'historico'))) && (
+                        {/* BLOCO CENTRAL COM TODOS OS DADOS */}
+                        {!showCadastro && !showCadastroFunc && veiculos.length > 0 && (!isGlobal || (isGlobal && userRole === 'GESTOR' && (view === 'dashboard' || view === 'historico'))) && (
                             <div className="p-4 space-y-4 mb-16">
                                 
                                 {/* 1. DASHBOARD */}
                                 {view === 'dashboard' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
+                                        
+                                        {/* Ações de Backup na Visão Global */}
                                         {isGlobal && (
                                             <div className="flex justify-between items-center bg-slate-50 border border-slate-200 p-2 rounded-xl">
                                                 <span className="text-[10px] font-bold text-slate-500 px-2">SEGURANÇA (JSON)</span>
@@ -687,6 +754,7 @@
                                                 </div>
                                             </div>
                                         )}
+
                                         <div className="bg-slate-800 text-white p-4 rounded-2xl shadow-sm flex flex-col gap-3">
                                             <div className="flex justify-between items-center border-b border-slate-700 pb-3">
                                                 <div>
@@ -707,6 +775,7 @@
                                             </div>
                                         </div>
 
+                                        {/* GRÁFICOS INTELIGENTES (Com Empty States para não parecer erro) */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             {isGlobal && (!dataPorCategoria || dataPorCategoria.labels.length === 0) && (
                                                 <div className="bg-slate-50 border border-dashed border-slate-300 p-8 rounded-2xl text-center md:col-span-2">
@@ -821,9 +890,12 @@
                                     </div>
                                 )}
 
-                                {/* 2. ROTAS */}
+                                {/* =======================================
+                                    2. ROTAS (AGORA COM SELECT DE MOTORISTA)
+                                ======================================== */}
                                 {view === 'rotas' && !isGlobal && (
                                     <div className="animate-fade-in space-y-4">
+                                        {/* Apenas Gestor vê o formulário de Agendar */}
                                         {userRole === 'GESTOR' && execucaoRota === null && (
                                             <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 space-y-3">
                                                 <h3 className="font-bold text-blue-800 text-sm flex items-center gap-2">🗺️ Agendar Rota</h3>
@@ -836,6 +908,7 @@
                                             </div>
                                         )}
 
+                                        {/* Formulário de Execução / Edição */}
                                         {execucaoRota !== null ? (
                                             <div className="bg-white p-4 rounded-2xl border border-amber-300 shadow-lg relative">
                                                 <button onClick={() => setExecucaoRota(null)} className="absolute top-4 right-4 text-slate-400 font-bold text-xs bg-slate-100 px-2 py-1 rounded">Voltar</button>
@@ -844,7 +917,6 @@
                                                     {execucaoRota.status === 'Concluída' ? '✏️ Editar Viagem' : '▶️ Executar Viagem'}
                                                 </h3>
                                                 
-                                                {/* Exibição do ID Customizado ao editar */}
                                                 <div className="mb-4">
                                                     <span className="bg-slate-100 text-slate-600 text-[10px] font-black px-2 py-1 rounded border border-slate-200">
                                                         ID: {execucaoRota.id}
@@ -888,14 +960,25 @@
                                                         )}
                                                     </div>
 
+                                                    {/* SELETORES DE EQUIPA SEM ESPAÇOS EM BRANCO */}
                                                     <div className="grid grid-cols-1 gap-2 pt-2 border-t border-slate-200">
-                                                        <input className="w-full border p-3 rounded-xl text-sm" placeholder="Motorista (Obrigatório)" value={execucaoRota.motorista} onChange={e => setExecucaoRota({...execucaoRota, motorista: e.target.value})} />
+                                                        <select className="w-full border p-3 rounded-xl text-sm bg-slate-50 font-bold" value={execucaoRota.motorista} onChange={e => setExecucaoRota({...execucaoRota, motorista: e.target.value})}>
+                                                            <option value="" disabled>-- Selecione o Motorista --</option>
+                                                            {funcionarios.filter(f => f.cargo === 'Motorista' || f.cargo === 'Ambos').map(f => <option key={f.nome} value={f.nome}>{f.nome}</option>)}
+                                                        </select>
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-2">
-                                                        <input className="w-full border p-3 rounded-xl text-sm" placeholder="Ajudante 1 (Opc)" value={execucaoRota.ajudante1} onChange={e => setExecucaoRota({...execucaoRota, ajudante1: e.target.value})} />
-                                                        <input className="w-full border p-3 rounded-xl text-sm" placeholder="Ajudante 2 (Opc)" value={execucaoRota.ajudante2} onChange={e => setExecucaoRota({...execucaoRota, ajudante2: e.target.value})} />
+                                                        <select className="w-full border p-3 rounded-xl text-sm bg-white" value={execucaoRota.ajudante1} onChange={e => setExecucaoRota({...execucaoRota, ajudante1: e.target.value})}>
+                                                            <option value="">-- Ajudante 1 (Opc) --</option>
+                                                            {funcionarios.filter(f => f.cargo === 'Ajudante' || f.cargo === 'Ambos').map(f => <option key={f.nome} value={f.nome}>{f.nome}</option>)}
+                                                        </select>
+                                                        <select className="w-full border p-3 rounded-xl text-sm bg-white" value={execucaoRota.ajudante2} onChange={e => setExecucaoRota({...execucaoRota, ajudante2: e.target.value})}>
+                                                            <option value="">-- Ajudante 2 (Opc) --</option>
+                                                            {funcionarios.filter(f => f.cargo === 'Ajudante' || f.cargo === 'Ambos').map(f => <option key={f.nome} value={f.nome}>{f.nome}</option>)}
+                                                        </select>
                                                     </div>
-                                                    <div className="grid grid-cols-2 gap-2 bg-slate-100 p-3 rounded-xl border border-slate-200">
+
+                                                    <div className="grid grid-cols-2 gap-2 bg-slate-100 p-3 rounded-xl border border-slate-200 mt-2">
                                                         <div>
                                                             <label className="text-[10px] font-bold text-slate-500 uppercase">KM Inicial</label>
                                                             <input type="number" className="w-full border p-2 rounded-lg text-sm font-bold" value={execucaoRota.kmInicial} onChange={e => setExecucaoRota({...execucaoRota, kmInicial: e.target.value})} />
@@ -1144,9 +1227,10 @@
                                                         </div>
                                                     </div>
                                                     
+                                                    {/* Exibe etiqueta de vínculo se tiver Rota */}
                                                     {d.rotaVinculada && (
                                                         <div className="mb-2">
-                                                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-1 rounded">🛣️ Associado à Viagem: {d.rotaVinculada}</span>
+                                                            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-bold px-2 py-1 rounded">🛣️ Associado à Viagem: {getNomeRota(d.rotaVinculada)}</span>
                                                         </div>
                                                     )}
 
@@ -1177,8 +1261,8 @@
                             </div>
                         )}
 
-                        {/* MENU INFERIOR */}
-                        {!showCadastro && veiculos.length > 0 && (
+                        {/* MENU INFERIOR (SCROLLABLE NO GESTOR) */}
+                        {!showCadastro && !showCadastroFunc && veiculos.length > 0 && (
                             <div className="fixed md:absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 px-1 py-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 overflow-x-auto hide-scroll flex gap-2">
                                 
                                 {userRole === 'GESTOR' ? (
