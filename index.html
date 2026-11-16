@@ -4,15 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RUBI FROTA - Gestão Inteligente</title>
+    <!-- Bibliotecas -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- Biblioteca Gráfica (Chart.js) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0f172a">
+    
+    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap" rel="stylesheet">
     
     <style>
@@ -99,6 +102,7 @@
 
         const renderChartOrInsight = (dataObj, type, title, isForceTemporalChart = false, customOptions = {}) => {
             if(!dataObj || !dataObj.labels || dataObj.labels.length === 0) return null;
+            
             if (!isForceTemporalChart && dataObj.labels.length === 1) {
                 const singleValue = dataObj.datasets[0].data[0];
                 return (
@@ -124,7 +128,11 @@
             );
         };
 
+        // =======================================================
+        // APLICAÇÃO PRINCIPAL (ControleFrotaMulti)
+        // =======================================================
         function ControleFrotaMulti() {
+            // ESTADOS (HOOKS)
             const [userRole, setUserRole] = useState(null); 
             const [veiculos, setVeiculos] = useState([]);
             const [veiculoAtivo, setVeiculoAtivo] = useState('TODOS'); 
@@ -158,6 +166,7 @@
             const [novaRotaGestor, setNovaRotaGestor] = useState({ origem: '', destino: '', observacoes: '' });
             const [execucaoRota, setExecucaoRota] = useState(null);
 
+            // Variáveis de Filtro Rápidas
             const isGlobal = veiculoAtivo === 'TODOS';
             const veiculoAtual = isGlobal ? null : veiculos.find(v => v.placa === veiculoAtivo);
             const kmAtualNum = veiculoAtual ? parseFloat(veiculoAtual.kmAtual) || 0 : 0;
@@ -169,15 +178,18 @@
             }, [rotas, veiculoAtivo, isGlobal]);
 
             // ==========================================
-            // CÁLCULOS DE BUSINESS INTELLIGENCE (BI)
+            // CÁLCULOS ESTATÍSTICOS BLINDADOS (BI)
             // ==========================================
+            const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#0ea5e9'];
+            
             const totalGasto = despesasIniciais.reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0);
             
             const custoKmGlobal = useMemo(() => {
+                if (!isGlobal) return null;
                 const gastos = despesasIniciais.reduce((a, b) => a + (parseFloat(b.valor) || 0), 0);
-                const kms = rotas.filter(r => r.status === 'Concluída' && (isGlobal || r.placa === veiculoAtivo)).reduce((a, b) => a + (Math.max(0, parseFloat(b.kmFinal) - parseFloat(b.kmInicial)) || 0), 0);
+                const kms = rotas.filter(r => r.status === 'Concluída').reduce((a, b) => a + (Math.max(0, parseFloat(b.kmFinal) - parseFloat(b.kmInicial)) || 0), 0);
                 return kms > 0 ? (gastos / kms).toFixed(2) : '0.00';
-            }, [despesasIniciais, rotas, isGlobal, veiculoAtivo]);
+            }, [despesasIniciais, rotas, isGlobal]);
 
             const rankingMotoristas = useMemo(() => {
                 if (!isGlobal) return [];
@@ -241,6 +253,17 @@
                 return { prev, corr };
             }, [despesasIniciais]);
 
+            const statsOficinaInternaExterna = useMemo(() => {
+                if (!isGlobal) return null;
+                let interna = 0, externa = 0;
+                despesasIniciais.filter(d => String(d.categoria).includes('Mecânica')).forEach(d => {
+                    if (d.localOS === 'Interna') interna += (parseFloat(d.valor) || 0);
+                    if (d.localOS === 'Externa') externa += (parseFloat(d.valor) || 0);
+                });
+                if (interna === 0 && externa === 0) return null;
+                return { interna, externa };
+            }, [despesasIniciais, isGlobal]);
+
             const statsPecasMO = useMemo(() => {
                 if (isGlobal) return null;
                 let mo = 0, pecas = 0;
@@ -249,7 +272,6 @@
                 return { mo, pecas };
             }, [despesasIniciais, isGlobal]);
 
-            // ===== OS 3 COMPONENTES QUE FALTAVAM AQUI =====
             const veiculosOciosos = useMemo(() => {
                 if (!isGlobal) return [];
                 const limite = new Date();
@@ -264,17 +286,6 @@
                 });
                 return veiculos.filter(v => !veiculosComRota.has(v.placa));
             }, [veiculos, rotas, isGlobal]);
-            
-            const statsOficinaInternaExterna = useMemo(() => {
-                if (!isGlobal) return null;
-                let interna = 0, externa = 0;
-                despesasIniciais.filter(d => String(d.categoria).includes('Mecânica')).forEach(d => {
-                    if (d.localOS === 'Interna') interna += (parseFloat(d.valor) || 0);
-                    if (d.localOS === 'Externa') externa += (parseFloat(d.valor) || 0);
-                });
-                if (interna === 0 && externa === 0) return null;
-                return { interna, externa };
-            }, [despesasIniciais, isGlobal]);
 
             const statsDiasOperacao = useMemo(() => {
                 if (isGlobal) return null;
@@ -285,13 +296,13 @@
                 if (diasRod.size === 0 && diasOfi.size === 0) return null;
                 return { rodando: diasRod.size, oficina: diasOfi.size };
             }, [rotas, despesasIniciais, veiculoAtivo, isGlobal]);
-            // ==============================================
 
-            const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#0ea5e9'];
-            
             const dataPorCategoria = useMemo(() => {
                 const map = {};
-                despesasIniciais.forEach(d => { const cat = String(d.categoria || 'Outros'); map[cat] = (map[cat] || 0) + (parseFloat(d.valor) || 0); });
+                despesasIniciais.forEach(d => { 
+                    const cat = String(d.categoria || 'Outros');
+                    map[cat] = (map[cat] || 0) + (parseFloat(d.valor) || 0); 
+                });
                 if (Object.keys(map).length === 0) return null;
                 return { labels: Object.keys(map), datasets: [{ data: Object.values(map), backgroundColor: coresGrafico, borderWidth: 0, hoverOffset: 4 }] };
             }, [despesasIniciais]);
@@ -332,7 +343,10 @@
             const dataRankingVeiculos = useMemo(() => {
                 if(!isGlobal) return null;
                 const map = {};
-                despesasIniciais.forEach(d => { const p = String(d.placa || 'Sem Matrícula'); map[p] = (map[p] || 0) + (parseFloat(d.valor) || 0); });
+                despesasIniciais.forEach(d => { 
+                    const p = String(d.placa || 'Sem Matrícula');
+                    map[p] = (map[p] || 0) + (parseFloat(d.valor) || 0); 
+                });
                 const sorted = Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 10);
                 if (sorted.length === 0) return null;
                 return { labels: sorted.map(i => i[0]), datasets: [{ label: 'Custo Total (R$)', data: sorted.map(i => i[1]), backgroundColor: '#f59e0b', borderRadius: 6 }] };
@@ -355,7 +369,9 @@
                 const map = {};
                 despesasIniciais.forEach(d => {
                     const f = String(d.fornecedor || 'Não Informado').trim();
-                    if (f !== '' && f !== 'Não Informado') map[f] = (map[f] || 0) + (parseFloat(d.valor) || 0);
+                    if (f !== '' && f !== 'Não Informado') {
+                        map[f] = (map[f] || 0) + (parseFloat(d.valor) || 0);
+                    }
                 });
                 const sorted = Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 5);
                 if (sorted.length === 0) return null;
@@ -442,7 +458,7 @@
             }, [despesasIniciais, isGlobal]);
 
             // ==========================================
-            // EFEITOS E SINCRONIZAÇÃO
+            // EFEITOS E SINCRONIZAÇÃO NUVEM
             // ==========================================
             useEffect(() => {
                 const savedRole = localStorage.getItem('rubi_frota_role');
@@ -528,14 +544,8 @@
             };
 
             // ==========================================
-            // LÓGICA DE FORMULÁRIOS
+            // LÓGICA DOS FORMULÁRIOS
             // ==========================================
-            const getNomeRota = (rotaId) => {
-                const r = rotas.find(rt => String(rt.id) === String(rotaId));
-                return r ? (r.status === 'Pendente' ? `⏳ ${r.origem} ➔ ${r.destino}` : `${r.id} (${r.origem} ➔ ${r.destino})`) : `Rota ${rotaId}`;
-            };
-            
-            const getKmAtual = (placa) => { const v = veiculos.find(ve => ve.placa === placa); return v ? parseFloat(v.kmAtual) || 0 : 0; };
             const atualizarKmVeiculo = (novoKmInformado, placaVeiculo) => {
                 const novoKm = parseFloat(novoKmInformado);
                 const veiculoAlvo = veiculos.find(v => v.placa === placaVeiculo);
@@ -545,7 +555,6 @@
 
             const handleAddFuncionario = () => {
                 if (!novoFuncionario.nome) return alert('O nome do colaborador é obrigatório!');
-                if (funcionarios.find(f => String(f.nome).toLowerCase() === String(novoFuncionario.nome).toLowerCase())) return alert('Membro já registado!');
                 const novosFuncs = [...funcionarios, novoFuncionario];
                 setFuncionarios(novosFuncs);
                 salvarNaNuvem(veiculos, despesas, lembretes, rotas, novosFuncs);
@@ -817,21 +826,6 @@
                 return status;
             };
 
-            const checkSaudeVeiculo = (placa) => {
-                const lembretesDoVeiculo = lembretes.filter(l => l.placa === placa);
-                if (lembretesDoVeiculo.length === 0) return 'OK';
-                let temCritico = false;
-                let temAviso = false;
-                lembretesDoVeiculo.forEach(l => {
-                    const st = checkStatusLembrete(l);
-                    if (st.critico) temCritico = true;
-                    if (st.icone === '⚠️' || st.icone === '📅') temAviso = true;
-                });
-                if (temCritico) return 'CRITICO';
-                if (temAviso) return 'AVISO';
-                return 'OK';
-            };
-
             const generatePDF = () => {
                 setIsGenerating(true);
                 const mainUi = document.getElementById('main-ui');
@@ -863,6 +857,7 @@
                 </div>
             );
 
+            // Filtros Visuais de Dados
             const despesasFiltradas = despesasIniciais.filter(d => 
                 (d.categoria && String(d.categoria).toLowerCase().includes(searchTerm.toLowerCase())) || 
                 (d.fornecedor && String(d.fornecedor).toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -870,10 +865,11 @@
                 (d.placa && String(d.placa).toLowerCase().includes(searchTerm.toLowerCase())) ||
                 (d.rotaVinculada && String(d.rotaVinculada).toLowerCase().includes(searchTerm.toLowerCase()))
             );
+
             const lembretesFiltrados = isGlobal ? lembretes : lembretes.filter(l => l.placa === veiculoAtivo);
             const rotasFiltradas = isGlobal ? rotas.slice().reverse() : rotas.filter(r => r.placa === veiculoAtivo).reverse();
             const rotasExibicao = userRole === 'OPERACIONAL' ? rotasFiltradas.filter(r => r.status === 'Pendente') : rotasFiltradas;
-
+            
             // ========================================================
             // TELA DE LOGIN
             // ========================================================
@@ -902,7 +898,7 @@
             }
 
             // ========================================================
-            // ESTRUTURA VISUAL PRINCIPAL (UI PREMIUM)
+            // ESTRUTURA VISUAL DA APLICAÇÃO
             // ========================================================
             return (
                 <div className="min-h-screen font-sans text-slate-800 flex flex-col md:flex-row bg-[#f8fafc]">
@@ -981,7 +977,7 @@
                                 )}
                             </nav>
                         </div>
-                        <div className="mt-8">
+                        <div className="mt-8 hidden md:block">
                             <button onClick={() => { setUserRole(null); localStorage.removeItem('rubi_frota_role'); }} className="w-full border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-white p-3 rounded-xl text-sm font-bold transition">Terminar Sessão</button>
                         </div>
                     </div>
@@ -1180,7 +1176,7 @@
                                     {!isGlobal && renderChartOrInsight(dataMediaCategoria, 'bar', 'Ticket Médio de cada Despesa', false, {indexAxis: 'y'})}
                                     {!isGlobal && renderChartOrInsight(dataMediaKmDestino, 'bar', 'Média de KM por Destino', false, {indexAxis: 'y'})}
                                     {!isGlobal && renderChartOrInsight(dataEvolucaoMensal, 'bar', 'Evolução Mensal de Gastos', true)}
-                                    {!isGlobal && renderChartOrInsight(dataCustoKm, 'line', 'Custo p/ KM (R$/KM)', true)}
+                                    {!isGlobal && renderChartOrInsight(dataCustoKm, 'line', 'Custo por KM (R$/KM)', true)}
                                     {!isGlobal && renderChartOrInsight(dataConsumo, 'line', 'Histórico de Consumo (KM por Litro)', true)}
                                     {!isGlobal && renderChartOrInsight(dataPrecoCombustivel, 'line', 'Preço do Combustível Pago (R$/L)', true)}
                                 </div>
@@ -1218,7 +1214,7 @@
                         )}
 
                         {/* ========================================================
-                            FORMULÁRIOS ENCAPSULADOS PARA AS OUTRAS VIEWS (NÃO-DASHBOARD) 
+                            FORMULÁRIOS ENCAPSULADOS PARA AS OUTRAS VIEWS
                         ======================================================== */}
                         {!showCadastro && !showCadastroFunc && veiculos.length > 0 && view !== 'dashboard' && (!isGlobal || view === 'historico') && (
                             <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200 animate-fade-in max-w-4xl mx-auto">
@@ -1359,7 +1355,7 @@
                                                                 <div className="flex justify-between items-start mb-3 border-b border-slate-100 pb-3">
                                                                     <div>
                                                                         <div className="flex items-center gap-2 mb-1.5">
-                                                                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${r.status === 'Pendente' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{r.status}</span>
+                                                                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${r.status === 'Pendente' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{r.status}</span>
                                                                             {r.status === 'Concluída' && <span className="text-[9px] font-black text-slate-400 bg-white px-1.5 py-0.5 rounded border border-slate-200 tracking-wider">{r.id}</span>}
                                                                         </div>
                                                                         <h4 className="font-black text-slate-800 text-lg leading-tight">{r.origem} <span className="text-slate-400 font-normal mx-1">➔</span> {r.destino}</h4>
@@ -1441,7 +1437,7 @@
                                             <h2 className="text-2xl font-black text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar Abastecimento' : '⛽ Registar Abastecimento'}</h2>
                                             {editingDespesaIndex !== null && <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg font-bold transition">Cancelar Edição</button>}
                                         </div>
-                                        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200">
+                                        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200">
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                                 <div>
                                                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Data</label>
@@ -1515,7 +1511,7 @@
                                             <h2 className="text-2xl font-black text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar O.S.' : '🔧 Nova Ordem de Serviço'}</h2>
                                             {editingDespesaIndex !== null && <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg font-bold transition">Cancelar</button>}
                                         </div>
-                                        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200">
+                                        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200">
                                             <div className="mb-4">
                                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Categoria do Serviço</label>
                                                 <select className="w-full bg-slate-50 p-4 rounded-xl font-bold text-slate-700 border border-slate-300 outline-none focus:border-blue-500" value={novaDespesa.categoria} onChange={e => setNovaDespesa({...novaDespesa, categoria: e.target.value})}>
@@ -1604,7 +1600,7 @@
                                             <h2 className="text-2xl font-black text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar Despesa' : '💸 Registar Despesa de Viagem'}</h2>
                                             {editingDespesaIndex !== null && <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg font-bold transition">Cancelar</button>}
                                         </div>
-                                        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200">
+                                        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200">
                                             
                                             <div className="mb-4">
                                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Tipo de Gasto</label>
@@ -1747,7 +1743,7 @@
                                                 </div>
                                             ) : (
                                                 despesasFiltradas.map((d, i) => (
-                                                    <div key={i} className="bg-white p-5 md:p-6 rounded-2xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-100 transition hover:shadow-md glass-card relative overflow-hidden">
+                                                    <div key={i} className="bg-white p-5 md:p-6 rounded-2xl shadow-sm border border-slate-200 transition hover:shadow-md glass-card relative overflow-hidden">
                                                         {/* Faixa lateral de cor pela Categoria */}
                                                         <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${String(d.categoria).includes('Abastecimento') ? 'bg-blue-500' : String(d.categoria).includes('Manutenção') ? 'bg-amber-500' : 'bg-emerald-500'}`}></div>
                                                         
@@ -1804,55 +1800,21 @@
                             </div>
                         )}
                     </div>
-                    
-                    {/* MENU FLUTUANTE INFERIOR MOBILE */}
-                    {!showCadastro && !showCadastroFunc && veiculos.length > 0 && (
-                        <div className="md:hidden fixed bottom-3 left-3 right-3 bg-white/95 backdrop-blur-lg border border-slate-200 p-1.5 shadow-[0_10px_40px_rgba(0,0,0,0.1)] z-50 rounded-2xl flex justify-between items-center gap-1">
-                            {userRole === 'GESTOR' ? (
-                                <>
-                                    <button onClick={() => { setView('dashboard'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-xl transition-colors ${view === 'dashboard' ? 'text-blue-700 bg-blue-50' : 'text-slate-400 hover:bg-slate-50'}`}>
-                                        <span className="text-xl mb-0.5">📊</span><span className="text-[9px] font-black uppercase tracking-wider">Painel</span>
-                                    </button>
-                                    <button onClick={() => { setView('rotas'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-xl transition-colors ${view === 'rotas' ? 'text-blue-700 bg-blue-50' : 'text-slate-400 hover:bg-slate-50'}`}>
-                                        <span className="text-xl mb-0.5">🗺️</span><span className="text-[9px] font-black uppercase tracking-wider">Rotas</span>
-                                    </button>
-                                    <button onClick={() => { setView('abastecimento'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Abastecimento'}); }} className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-xl transition-colors ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50' : 'text-slate-400 hover:bg-slate-50'}`}>
-                                        <span className="text-xl mb-0.5">⛽</span><span className="text-[9px] font-black uppercase tracking-wider">Posto</span>
-                                    </button>
-                                    <button onClick={() => { setView('despesaGeral'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Pedágio'}); }} className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-xl transition-colors ${view === 'despesaGeral' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-400 hover:bg-slate-50'}`}>
-                                        <span className="text-xl mb-0.5">💸</span><span className="text-[9px] font-black uppercase tracking-wider">Despesas</span>
-                                    </button>
-                                    <button onClick={() => { setView('os'); if(editingDespesaIndex === null) setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-xl transition-colors ${view === 'os' ? 'text-blue-700 bg-blue-50' : 'text-slate-400 hover:bg-slate-50'}`}>
-                                        <span className="text-xl mb-0.5">🔧</span><span className="text-[9px] font-black uppercase tracking-wider">O.S.</span>
-                                    </button>
-                                    <button onClick={() => { setView('historico'); setEditingDespesaIndex(null); }} className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-xl transition-colors ${view === 'historico' ? 'text-blue-700 bg-blue-50' : 'text-slate-400 hover:bg-slate-50'}`}>
-                                        <span className="text-xl mb-0.5">🧾</span><span className="text-[9px] font-black uppercase tracking-wider">Caixa</span>
-                                    </button>
-                                </>
-                            ) : (
-                                <>
-                                    <button onClick={() => { setView('rotas'); setExecucaoRota(null); }} className={`flex-1 flex flex-col items-center justify-center p-3 rounded-xl transition-colors ${view === 'rotas' ? 'text-blue-700 bg-blue-50' : 'text-slate-400 hover:bg-slate-50'}`}>
-                                        <span className="text-2xl mb-1">🗺️</span><span className="text-[10px] font-black uppercase tracking-wider">Viagens</span>
-                                    </button>
-                                    <button onClick={() => { setView('abastecimento'); setNovaDespesa({...defaultDespesa, categoria: 'Abastecimento'}); }} className={`flex-1 flex flex-col items-center justify-center p-3 rounded-xl transition-colors ${view === 'abastecimento' ? 'text-blue-700 bg-blue-50' : 'text-slate-400 hover:bg-slate-50'}`}>
-                                        <span className="text-2xl mb-1">⛽</span><span className="text-[10px] font-black uppercase tracking-wider">Posto</span>
-                                    </button>
-                                    <button onClick={() => { setView('despesaGeral'); setNovaDespesa({...defaultDespesa, categoria: 'Pedágio'}); }} className={`flex-1 flex flex-col items-center justify-center p-3 rounded-xl transition-colors ${view === 'despesaGeral' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-400 hover:bg-slate-50'}`}>
-                                        <span className="text-2xl mb-1">💸</span><span className="text-[10px] font-black uppercase tracking-wider">Despesas</span>
-                                    </button>
-                                    <button onClick={() => { setView('os'); setNovaDespesa({...defaultDespesa, categoria: 'Mecânica / Manutenção'}); }} className={`flex-1 flex flex-col items-center justify-center p-3 rounded-xl transition-colors ${view === 'os' ? 'text-blue-700 bg-blue-50' : 'text-slate-400 hover:bg-slate-50'}`}>
-                                        <span className="text-2xl mb-1">🔧</span><span className="text-[10px] font-black uppercase tracking-wider">O.S.</span>
-                                    </button>
-                                </>
-                            )}
-                        </div>
-                    )}
                 </div>
             );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ControleFrotaMulti />);
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => console.log('✅ Service Worker registado!', reg))
+                    .catch(err => console.error('❌ Erro no Service Worker', err));
+            });
+        }
     </script>
 </body>
 </html>
