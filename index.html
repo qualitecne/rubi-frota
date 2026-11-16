@@ -10,7 +10,6 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <!-- Biblioteca Gráfica (Chart.js) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <link rel="manifest" href="manifest.json">
@@ -181,7 +180,52 @@
             }, [rotas, veiculoAtivo, isGlobal]);
 
             // ==========================================
-            // 3. CÁLCULOS ESTATÍSTICOS E GRÁFICOS (BI)
+            // AS FUNÇÕES QUE FALTAVAM (PARA NÃO DAR ECRÃ BRANCO)
+            // ==========================================
+            const getKmAtual = (placa) => { 
+                const v = veiculos.find(ve => ve.placa === placa); 
+                return v ? parseFloat(v.kmAtual) || 0 : 0; 
+            };
+
+            const checkStatusLembrete = (lembrete) => {
+                const kmDoVeiculoAlvo = getKmAtual(lembrete.placa);
+                let status = { cor: 'bg-green-50 text-green-700', icone: '✅', msg: 'No Prazo', critico: false };
+                if (lembrete.freqKm) {
+                    const limiteKm = parseFloat(lembrete.ultimoKm) + parseFloat(lembrete.freqKm);
+                    if (kmDoVeiculoAlvo >= limiteKm) return { cor: 'bg-red-50 text-red-700', icone: '🚨', msg: 'Vencido (KM)', critico: true };
+                    else if (limiteKm - kmDoVeiculoAlvo <= 1000) status = { cor: 'bg-amber-50 text-amber-700', icone: '⚠️', msg: 'Atenção: KM Próximo', critico: false };
+                }
+                if (lembrete.freqMeses && !status.critico) {
+                    const dataLimite = new Date(lembrete.ultimaData);
+                    dataLimite.setMonth(dataLimite.getMonth() + parseInt(lembrete.freqMeses));
+                    const hoje = new Date();
+                    if (hoje >= dataLimite) return { cor: 'bg-red-50 text-red-700', icone: '🚨', msg: 'Vencido (Prazo)', critico: true };
+                    else {
+                        const diffDias = (dataLimite - hoje) / (1000 * 60 * 60 * 24);
+                        if (diffDias <= 15) status = { cor: 'bg-amber-50 text-amber-700', icone: '📅', msg: 'Atenção: Prazo Próximo', critico: false };
+                    }
+                }
+                return status;
+            };
+
+            const checkSaudeVeiculo = (placa) => {
+                const lembretesDoVeiculo = lembretes.filter(l => l.placa === placa);
+                if (lembretesDoVeiculo.length === 0) return 'OK';
+                let temCritico = false;
+                let temAviso = false;
+                lembretesDoVeiculo.forEach(l => {
+                    const st = checkStatusLembrete(l);
+                    if (st.critico) temCritico = true;
+                    if (st.icone === '⚠️' || st.icone === '📅') temAviso = true;
+                });
+                if (temCritico) return 'CRITICO';
+                if (temAviso) return 'AVISO';
+                return 'OK';
+            };
+
+
+            // ==========================================
+            // 3. CÁLCULOS DE BUSINESS INTELLIGENCE (BLINDADOS)
             // ==========================================
             const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#0ea5e9'];
             
@@ -209,22 +253,9 @@
             const painelRisco = useMemo(() => {
                 let critico = 0, atencao = 0;
                 lembretes.forEach(l => {
-                    const v = veiculos.find(ve => ve.placa === l.placa);
-                    const kmV = v ? parseFloat(v.kmAtual) || 0 : 0;
-                    let stCritico = false;
-                    
-                    if (l.freqKm) {
-                        const limKm = parseFloat(l.ultimoKm) + parseFloat(l.freqKm);
-                        if (kmV >= limKm) { critico++; stCritico = true; }
-                        else if (limKm - kmV <= 1000) atencao++;
-                    }
-                    if (l.freqMeses && !stCritico) {
-                        const dLim = new Date(l.ultimaData);
-                        dLim.setMonth(dLim.getMonth() + parseInt(l.freqMeses));
-                        const hj = new Date();
-                        if (hj >= dLim) critico++;
-                        else if ((dLim - hj) / 86400000 <= 15) atencao++;
-                    }
+                    const st = checkStatusLembrete(l);
+                    if (st.critico) critico++;
+                    else if (st.icone === '⚠️' || st.icone === '📅') atencao++;
                 });
                 return { critico, atencao };
             }, [lembretes, veiculos]);
@@ -550,9 +581,8 @@
             };
 
             // ==========================================
-            // LÓGICA DE FORMULÁRIOS
+            // LÓGICA DOS FORMULÁRIOS
             // ==========================================
-            const getKmAtual = (placa) => { const v = veiculos.find(ve => ve.placa === placa); return v ? parseFloat(v.kmAtual) || 0 : 0; };
             const atualizarKmVeiculo = (novoKmInformado, placaVeiculo) => {
                 const novoKm = parseFloat(novoKmInformado);
                 const veiculoAlvo = veiculos.find(v => v.placa === placaVeiculo);
@@ -813,27 +843,6 @@
                 }
             };
 
-            const checkStatusLembrete = (lembrete) => {
-                const kmDoVeiculoAlvo = getKmAtual(lembrete.placa);
-                let status = { cor: 'bg-green-50 border-green-500 text-green-700', icone: '✅', msg: 'No Prazo', critico: false };
-                if (lembrete.freqKm) {
-                    const limiteKm = parseFloat(lembrete.ultimoKm) + parseFloat(lembrete.freqKm);
-                    if (kmDoVeiculoAlvo >= limiteKm) return { cor: 'bg-red-50 border-red-500 text-red-700', icone: '🚨', msg: 'Vencido (KM)', critico: true };
-                    else if (limiteKm - kmDoVeiculoAlvo <= 1000) status = { cor: 'bg-amber-50 border-amber-500 text-amber-700', icone: '⚠️', msg: 'Atenção: KM Próximo', critico: false };
-                }
-                if (lembrete.freqMeses && !status.critico) {
-                    const dataLimite = new Date(lembrete.ultimaData);
-                    dataLimite.setMonth(dataLimite.getMonth() + parseInt(lembrete.freqMeses));
-                    const hoje = new Date();
-                    if (hoje >= dataLimite) return { cor: 'bg-red-50 border-red-500 text-red-700', icone: '🚨', msg: 'Vencido (Prazo)', critico: true };
-                    else {
-                        const diffDias = (dataLimite - hoje) / (1000 * 60 * 60 * 24);
-                        if (diffDias <= 15) status = { cor: 'bg-amber-50 border-amber-500 text-amber-700', icone: '📅', msg: 'Atenção: Prazo Próximo', critico: false };
-                    }
-                }
-                return status;
-            };
-
             const generatePDF = () => {
                 setIsGenerating(true);
                 const mainUi = document.getElementById('main-ui');
@@ -841,7 +850,7 @@
                 mainUi.style.display = 'none';
                 pdfContent.style.display = 'block';
                 window.scrollTo(0, 0);
-                const filename = isGlobal ? `Relatorio_RUBI_FROTA_Global.pdf` : `Dossie_${veiculoAtual?.placa || 'Veiculo'}.pdf`;
+                const filename = isGlobal ? `Relatorio_RUBI_FROTA_Global.pdf` : `Dossie_${veiculoAtual ? veiculoAtual.placa : 'Veiculo'}.pdf`;
                 const opt = { margin: [5, 5, 10, 5], filename: filename, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
                 window.html2pdf().set(opt).from(pdfContent).save().then(() => {
                     mainUi.style.display = 'block';
@@ -864,33 +873,6 @@
                     <p className="text-[10px] text-slate-400 mt-1">Ligue esta despesa a uma viagem para calcular o lucro total do frete.</p>
                 </div>
             );
-
-            // ========================================================
-            // RENDERIZAÇÃO DA TELA DE LOGIN
-            // ========================================================
-            if (!userRole) {
-                return (
-                    <div className="min-h-screen flex items-center justify-center bg-[#0f172a] p-6 animate-fade-in">
-                        <div className="bg-white p-10 rounded-3xl shadow-2xl w-full max-w-md text-center relative overflow-hidden">
-                            <div className="absolute top-0 left-0 w-full h-3 bg-blue-600"></div>
-                            <h1 className="text-5xl font-black tracking-tighter text-blue-600 mb-2 mt-4">RUBI<span className="text-slate-800 font-light">FROTA</span></h1>
-                            <p className="text-slate-500 text-sm mb-10 font-medium">Gestão Inteligente de Frotas</p>
-                            <div className="space-y-4">
-                                <button onClick={() => {
-                                    const pin = prompt("Senha do Gestor (1234):");
-                                    if (pin === '1234') { setUserRole('GESTOR'); localStorage.setItem('rubi_frota_role', 'GESTOR'); setView('dashboard'); } 
-                                    else if (pin !== null) alert('Senha incorreta!');
-                                }} className="w-full bg-slate-900 text-white font-bold p-4 rounded-xl hover:bg-slate-800 transition flex items-center justify-center gap-3 shadow-lg">
-                                    <span className="text-xl">👔</span> <span>Painel de Controlo (Gestor)</span>
-                                </button>
-                                <button onClick={() => { setUserRole('OPERACIONAL'); localStorage.setItem('rubi_frota_role', 'OPERACIONAL'); setView('rotas'); }} className="w-full bg-blue-50 text-blue-700 font-bold p-4 rounded-xl border border-blue-200 hover:bg-blue-100 transition flex items-center justify-center gap-3">
-                                    <span className="text-xl">🚛</span> <span>Acesso Operacional (Motorista)</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
 
             // Preparação dos Filtros Visuais
             const despesasFiltradas = despesasIniciais.filter(d => 
@@ -1130,8 +1112,8 @@
                                         </>
                                     ) : (
                                         <>
-                                            <KPICard icon="🛣️" title="Quilometragem" value={`${kmAtualNum.toLocaleString()} km`} subtitle={`Motorista: ${veiculoAtual?.motorista || 'N/I'}`} colorClass="bg-emerald-50 text-emerald-600" />
-                                            <KPICard icon="🔧" title="Intervenções" value={despesasIniciais.length} subtitle={`Centro Custo: ${veiculoAtual?.centroCusto || 'N/I'}`} colorClass="bg-amber-50 text-amber-600" />
+                                            <KPICard icon="🛣️" title="Quilometragem" value={`${kmAtualNum.toLocaleString()} km`} subtitle={`Motorista: ${veiculoAtual ? veiculoAtual.motorista : 'N/I'}`} colorClass="bg-emerald-50 text-emerald-600" />
+                                            <KPICard icon="🔧" title="Intervenções" value={despesasIniciais.length} subtitle={`Centro Custo: ${veiculoAtual ? veiculoAtual.centroCusto : 'N/I'}`} colorClass="bg-amber-50 text-amber-600" />
                                         </>
                                     )}
                                 </div>
@@ -1140,6 +1122,7 @@
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
                                     {isGlobal && statsPrevCorr && <DualBar title="Distribuição de Manutenção (KPI Ouro)" label1="Preventiva" val1={statsPrevCorr.prev} color1="#10b981" label2="Corretiva" val2={statsPrevCorr.corr} color2="#ef4444" />}
                                     {isGlobal && statsOficinaInternaExterna && <DualBar title="Oficina: Make ou Buy" label1="Interna" val1={statsOficinaInternaExterna.interna} color1="#3b82f6" label2="Externa" val2={statsOficinaInternaExterna.externa} color2="#f97316" />}
+                                    
                                     {!isGlobal && statsPecasMO && <DualBar title="Custos de Oficina (Nesta Viatura)" label1="Mão de Obra" val1={statsPecasMO.mo} color1="#8b5cf6" label2="Peças" val2={statsPecasMO.pecas} color2="#ec4899" />}
                                     {!isGlobal && statsPrevCorr && <DualBar title="Saúde deste Veículo" label1="Preventiva" val1={statsPrevCorr.prev} color1="#10b981" label2="Corretiva" val2={statsPrevCorr.corr} color2="#ef4444" />}
                                     
@@ -1438,7 +1421,7 @@
                                             <h2 className="text-2xl font-black text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar Abastecimento' : '⛽ Registar Abastecimento'}</h2>
                                             {editingDespesaIndex !== null && <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg font-bold transition">Cancelar Edição</button>}
                                         </div>
-                                        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200">
+                                        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200">
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                                 <div>
                                                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Data</label>
@@ -1512,7 +1495,7 @@
                                             <h2 className="text-2xl font-black text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar O.S.' : '🔧 Nova Ordem de Serviço'}</h2>
                                             {editingDespesaIndex !== null && <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg font-bold transition">Cancelar</button>}
                                         </div>
-                                        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200">
+                                        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200">
                                             <div className="mb-4">
                                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Categoria do Serviço</label>
                                                 <select className="w-full bg-slate-50 p-4 rounded-xl font-bold text-slate-700 border border-slate-300 outline-none focus:border-blue-500" value={novaDespesa.categoria} onChange={e => setNovaDespesa({...novaDespesa, categoria: e.target.value})}>
@@ -1601,7 +1584,7 @@
                                             <h2 className="text-2xl font-black text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar Despesa' : '💸 Registar Despesa de Viagem'}</h2>
                                             {editingDespesaIndex !== null && <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg font-bold transition">Cancelar</button>}
                                         </div>
-                                        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200">
+                                        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200">
                                             
                                             <div className="mb-4">
                                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Tipo de Gasto</label>
@@ -1660,7 +1643,7 @@
                                     <div className="space-y-6 animate-fade-in max-w-3xl mx-auto">
                                         <h2 className="text-2xl font-black text-slate-800">🔔 Configurar Alertas Preventivos</h2>
                                         
-                                        <div className="bg-blue-50 p-6 md:p-8 rounded-3xl border border-blue-100 shadow-sm">
+                                        <div className="bg-blue-50 p-6 md:p-8 rounded-3xl border border-blue-100 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)]">
                                             <h3 className="font-bold text-blue-900 text-sm mb-4">Adicionar Nova Regra</h3>
                                             <div className="space-y-4">
                                                 <div>
@@ -1670,21 +1653,21 @@
                                                 </div>
                                                 
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    <div className="bg-white p-3 rounded-xl border border-blue-100">
+                                                    <div className="bg-white p-4 rounded-xl border border-blue-100">
                                                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-2 border-b pb-1">Vencimento por Quilometragem</label>
                                                         <div className="space-y-3 mt-2">
-                                                            <input type="number" className="w-full border border-slate-300 p-2 rounded-lg text-sm outline-none focus:border-blue-500" placeholder="Avisar a cada X KM (Ex: 10000)" value={novoLembrete.freqKm} onChange={e => setNovoLembrete({...novoLembrete, freqKm: e.target.value})} />
-                                                            <input type="number" className="w-full border border-slate-300 p-2 rounded-lg text-sm outline-none focus:border-blue-500 bg-slate-50" placeholder="KM em que foi feito" value={novoLembrete.ultimoKm} onChange={e => setNovoLembrete({...novoLembrete, ultimoKm: e.target.value})} />
+                                                            <input type="number" className="w-full border border-slate-300 p-3 rounded-lg text-sm outline-none focus:border-blue-500" placeholder="Avisar a cada X KM (Ex: 10000)" value={novoLembrete.freqKm} onChange={e => setNovoLembrete({...novoLembrete, freqKm: e.target.value})} />
+                                                            <input type="number" className="w-full border border-slate-300 p-3 rounded-lg text-sm outline-none focus:border-blue-500 bg-slate-50" placeholder="KM em que foi feito" value={novoLembrete.ultimoKm} onChange={e => setNovoLembrete({...novoLembrete, ultimoKm: e.target.value})} />
                                                         </div>
                                                     </div>
                                                     
-                                                    <div className="bg-white p-3 rounded-xl border border-blue-100">
+                                                    <div className="bg-white p-4 rounded-xl border border-blue-100">
                                                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-2 border-b pb-1">Vencimento por Prazo (Tempo)</label>
                                                         <div className="space-y-3 mt-2">
-                                                            <select className="w-full border border-slate-300 p-2 rounded-lg text-sm outline-none focus:border-blue-500 bg-white" value={novoLembrete.freqMeses} onChange={e => setNovoLembrete({...novoLembrete, freqMeses: e.target.value})}>
+                                                            <select className="w-full border border-slate-300 p-3 rounded-lg text-sm outline-none focus:border-blue-500 bg-white" value={novoLembrete.freqMeses} onChange={e => setNovoLembrete({...novoLembrete, freqMeses: e.target.value})}>
                                                                 <option value="">Apenas usar KM...</option><option value="3">A cada 3 meses</option><option value="6">A cada 6 meses</option><option value="12">Anual (12 meses)</option>
                                                             </select>
-                                                            <input type="date" className="w-full border border-slate-300 p-2 rounded-lg text-sm outline-none focus:border-blue-500 bg-slate-50" value={novoLembrete.ultimaData} onChange={e => setNovoLembrete({...novoLembrete, ultimaData: e.target.value})} />
+                                                            <input type="date" className="w-full border border-slate-300 p-3 rounded-lg text-sm outline-none focus:border-blue-500 bg-slate-50" value={novoLembrete.ultimaData} onChange={e => setNovoLembrete({...novoLembrete, ultimaData: e.target.value})} />
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1700,7 +1683,7 @@
                                                     {lembretesFiltrados.map(l => {
                                                         const status = checkStatusLembrete(l);
                                                         return (
-                                                            <div key={l.id} className={`flex justify-between items-center bg-white p-4 rounded-2xl border-l-8 shadow-sm transition hover:shadow-md ${status.cor.replace('bg-','').replace('text-','')}`}>
+                                                            <div key={l.id} className={`flex justify-between items-center bg-white p-5 rounded-2xl border-l-8 shadow-sm transition hover:shadow-md ${status.cor.replace('bg-','').replace('text-','')}`}>
                                                                 <div className="flex items-center gap-4">
                                                                     <span className="text-3xl">{status.icone}</span>
                                                                     <div>
@@ -1801,8 +1784,8 @@
                             </div>
                         )}
                     </div>
-
-                    {/* MENU INFERIOR MOBILE */}
+                    
+                    {/* MENU FLUTUANTE INFERIOR MOBILE */}
                     {!showCadastro && !showCadastroFunc && veiculos.length > 0 && (
                         <div className="md:hidden fixed bottom-3 left-3 right-3 bg-white/95 backdrop-blur-lg border border-slate-200 p-1.5 shadow-[0_10px_40px_rgba(0,0,0,0.1)] z-50 rounded-2xl flex justify-between items-center gap-1">
                             {userRole === 'GESTOR' ? (
