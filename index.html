@@ -4,16 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RUBI FROTA - Gestão Inteligente</title>
-    <!-- Bibliotecas -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <!-- Biblioteca Gráfica (Chart.js) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1e293b">
+    
     <style>
         details > summary { list-style: none; cursor: pointer; }
         details > summary::-webkit-details-marker { display: none; }
@@ -31,7 +31,7 @@
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7N4C1lZperjJZiDlk_SPDEl4OlfvuvbjdePeWKa-qr2ojbu4kmL862ntMjjcZNPrPQQ/exec';
 
         // =======================================================
-        // COMPONENTES AUXILIARES
+        // COMPONENTES DE INTERFACE / UI
         // =======================================================
         const formatCurrency = (val) => isNaN(parseFloat(val)) ? 'R$ 0,00' : parseFloat(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -139,7 +139,6 @@
                 km: '', fornecedor: '', nf: '', descricao: '', pecas: '',
                 litros: '', precoLitro: '', tipoOS: 'Corretiva', localOS: 'Externa', anexos: [], rotaVinculada: ''
             };
-
             const [novaDespesa, setNovaDespesa] = useState(defaultDespesa);
             const [novoLembrete, setNovoLembrete] = useState({ tipo: 'Troca de Óleo e Filtro', freqKm: '', freqMeses: '', ultimoKm: '', ultimaData: new Date().toISOString().split('T')[0] });
             const [novaRotaGestor, setNovaRotaGestor] = useState({ origem: '', destino: '', observacoes: '' });
@@ -155,16 +154,109 @@
                 return rotas.filter(r => r.placa === veiculoAtivo).reverse().slice(0, 20);
             }, [rotas, veiculoAtivo, isGlobal]);
 
-            const getNomeRota = (rotaId) => {
-                const r = rotas.find(rt => String(rt.id) === String(rotaId));
-                return r ? (r.status === 'Pendente' ? `⏳ ${r.origem} ➔ ${r.destino}` : `${r.id} (${r.origem} ➔ ${r.destino})`) : `Rota ${rotaId}`;
-            };
-
             // ==========================================
-            // CÁLCULOS GRÁFICOS (BLINDADOS)
+            // CÁLCULOS DE BUSINESS INTELLIGENCE (BI)
             // ==========================================
-            const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#0ea5e9'];
             
+            // 1. Custo Médio Global por KM
+            const custoKmGlobal = useMemo(() => {
+                if (!isGlobal) return null;
+                const gastos = despesasIniciais.reduce((a, b) => a + (parseFloat(b.valor) || 0), 0);
+                const kms = rotas.filter(r => r.status === 'Concluída').reduce((a, b) => a + (Math.max(0, parseFloat(b.kmFinal) - parseFloat(b.kmInicial)) || 0), 0);
+                return kms > 0 ? (gastos / kms).toFixed(2) : '0.00';
+            }, [despesasIniciais, rotas, isGlobal]);
+
+            // 2. Ranking de Motoristas (Top KM)
+            const rankingMotoristas = useMemo(() => {
+                if (!isGlobal) return [];
+                const map = {};
+                rotas.filter(r => r.status === 'Concluída' && r.motorista).forEach(r => {
+                    const dist = Math.max(0, parseFloat(r.kmFinal) - parseFloat(r.kmInicial)) || 0;
+                    if (dist > 0) map[r.motorista] = (map[r.motorista] || 0) + dist;
+                });
+                return Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 5);
+            }, [rotas, isGlobal]);
+
+            // 3. Veículos Ociosos (Parados > 30 dias)
+            const veiculosOciosos = useMemo(() => {
+                if (!isGlobal) return [];
+                const limite = new Date();
+                limite.setDate(limite.getDate() - 30);
+                
+                const veiculosComRota = new Set();
+                rotas.filter(r => r.status === 'Concluída' && r.dataInicial).forEach(r => {
+                    const dataBruta = r.dataInicial.split(' ')[0].split('/');
+                    if(dataBruta.length === 3) {
+                        const dateRota = new Date(`${dataBruta[2]}-${dataBruta[1]}-${dataBruta[0]}T12:00:00`);
+                        if (dateRota >= limite) veiculosComRota.add(r.placa);
+                    }
+                });
+                return veiculos.filter(v => !veiculosComRota.has(v.placa));
+            }, [veiculos, rotas, isGlobal]);
+
+            // 4. Painel Global de Riscos (Lembretes)
+            const painelRisco = useMemo(() => {
+                let critico = 0, atencao = 0;
+                lembretes.forEach(l => {
+                    const v = veiculos.find(ve => ve.placa === l.placa);
+                    const kmV = v ? parseFloat(v.kmAtual) || 0 : 0;
+                    let stCritico = false;
+                    
+                    if (l.freqKm) {
+                        const limKm = parseFloat(l.ultimoKm) + parseFloat(l.freqKm);
+                        if (kmV >= limKm) { critico++; stCritico = true; }
+                        else if (limKm - kmV <= 1000) atencao++;
+                    }
+                    if (l.freqMeses && !stCritico) {
+                        const dLim = new Date(l.ultimaData);
+                        dLim.setMonth(dLim.getMonth() + parseInt(l.freqMeses));
+                        const hj = new Date();
+                        if (hj >= dLim) critico++;
+                        else if ((dLim - hj) / 86400000 <= 15) atencao++;
+                    }
+                });
+                return { critico, atencao };
+            }, [lembretes, veiculos]);
+
+            // 5. Dias em Operação vs Dias Oficina (Individual)
+            const statsDiasOperacao = useMemo(() => {
+                if (isGlobal) return null;
+                // Conta dias únicos que teve rotas
+                const diasRod = new Set();
+                rotas.filter(r => r.placa === veiculoAtivo && r.status === 'Concluída' && r.dataInicial).forEach(r => diasRod.add(r.dataInicial.split(' ')[0]));
+                // Conta dias únicos que foi à oficina
+                const diasOfi = new Set();
+                despesasIniciais.filter(d => d.categoria === 'Mecânica / Manutenção' && d.data).forEach(d => diasOfi.add(d.data));
+                
+                if (diasRod.size === 0 && diasOfi.size === 0) return null;
+                return { rodando: diasRod.size, oficina: diasOfi.size };
+            }, [rotas, despesasIniciais, veiculoAtivo, isGlobal]);
+
+            // 6. Alarme de Roubo / Fuga de Combustível (Individual)
+            const alertaConsumo = useMemo(() => {
+                if (isGlobal) return null;
+                const abs = despesasIniciais.filter(d => d.categoria === 'Abastecimento' && String(d.descricao || '').includes('L a')).sort((a,b) => new Date(a.data||0) - new Date(b.data||0));
+                if (abs.length < 3) return null; // Precisa de histórico mínimo
+                
+                let consumos = [];
+                for(let i = 1; i < abs.length; i++) {
+                    const kA = parseFloat(abs[i].km), kB = parseFloat(abs[i-1].km);
+                    const match = String(abs[i].descricao).match(/\[(.*?)L a/);
+                    const l = match ? parseFloat(match[1]) : 0;
+                    if(kA > kB && l > 0) consumos.push((kA - kB) / l);
+                }
+                
+                if (consumos.length < 2) return null;
+                const current = consumos.pop(); // Último consumo
+                const avgHistory = consumos.reduce((a,b)=>a+b, 0) / consumos.length;
+                
+                // Se o consumo caiu mais de 25% em relação à média, dispara alarme
+                if (current < avgHistory * 0.75) {
+                    return `Queda acentuada detetada: Fez ${current.toFixed(2)} KM/L (Média Histórica: ${avgHistory.toFixed(2)} KM/L). Verifique possível desvio ou anomalia mecânica.`;
+                }
+                return null;
+            }, [despesasIniciais, isGlobal]);
+
             const statsPrevCorr = useMemo(() => {
                 let prev = 0, corr = 0;
                 despesasIniciais.forEach(d => {
@@ -175,6 +267,17 @@
                 return { prev, corr };
             }, [despesasIniciais]);
 
+            const statsOficinaInternaExterna = useMemo(() => {
+                if (!isGlobal) return null;
+                let interna = 0, externa = 0;
+                despesasIniciais.filter(d => d.categoria === 'Mecânica / Manutenção').forEach(d => {
+                    if (d.localOS === 'Interna') interna += (parseFloat(d.valor) || 0);
+                    if (d.localOS === 'Externa') externa += (parseFloat(d.valor) || 0);
+                });
+                if (interna === 0 && externa === 0) return null;
+                return { interna, externa };
+            }, [despesasIniciais, isGlobal]);
+
             const statsPecasMO = useMemo(() => {
                 if (isGlobal) return null;
                 let mo = 0, pecas = 0;
@@ -183,85 +286,22 @@
                 return { mo, pecas };
             }, [despesasIniciais, isGlobal]);
 
+            const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#0ea5e9'];
+            
             const dataPorCategoria = useMemo(() => {
                 const map = {};
-                despesasIniciais.forEach(d => { 
-                    const cat = String(d.categoria || 'Outros');
-                    map[cat] = (map[cat] || 0) + (parseFloat(d.valor) || 0); 
-                });
+                despesasIniciais.forEach(d => { const cat = String(d.categoria || 'Outros'); map[cat] = (map[cat] || 0) + (parseFloat(d.valor) || 0); });
                 if (Object.keys(map).length === 0) return null;
                 return { labels: Object.keys(map), datasets: [{ data: Object.values(map), backgroundColor: coresGrafico, borderWidth: 1 }] };
             }, [despesasIniciais]);
 
-            const dataMediaCategoria = useMemo(() => {
-                const map = {};
-                despesasIniciais.forEach(d => {
-                    const cat = String(d.categoria || 'Outros');
-                    const val = parseFloat(d.valor) || 0;
-                    if (val > 0) {
-                        if (!map[cat]) map[cat] = { total: 0, count: 0 };
-                        map[cat].total += val;
-                        map[cat].count += 1;
-                    }
-                });
-                const labels = Object.keys(map).sort();
-                if (labels.length === 0) return null;
-                return { labels, datasets: [{ label: 'Ticket Médio (R$)', data: labels.map(k => (map[k].total / map[k].count).toFixed(2)), backgroundColor: '#8b5cf6', borderRadius: 4 }] };
-            }, [despesasIniciais]);
-
-            const dataMediaKmDestino = useMemo(() => {
-                const map = {};
-                const rotasFiltradas = isGlobal ? rotas : rotas.filter(r => r.placa === veiculoAtivo);
-                rotasFiltradas.filter(r => r.status === 'Concluída' && r.kmFinal && r.kmInicial).forEach(r => {
-                    const dist = parseFloat(r.kmFinal) - parseFloat(r.kmInicial);
-                    const dest = String(r.destino || 'Desconhecido').trim().toUpperCase();
-                    if (dist > 0) {
-                        if (!map[dest]) map[dest] = { totalKm: 0, count: 0 };
-                        map[dest].totalKm += dist;
-                        map[dest].count += 1;
-                    }
-                });
-                const labels = Object.keys(map).sort();
-                if (labels.length === 0) return null;
-                return { labels, datasets: [{ label: 'Média de Distância (KM)', data: labels.map(k => (map[k].totalKm / map[k].count).toFixed(0)), backgroundColor: '#14b8a6', borderRadius: 4 }] };
-            }, [rotas, isGlobal, veiculoAtivo]);
-
             const dataRankingVeiculos = useMemo(() => {
                 if(!isGlobal) return null;
                 const map = {};
-                despesasIniciais.forEach(d => { 
-                    const p = String(d.placa || 'Sem Matrícula');
-                    map[p] = (map[p] || 0) + (parseFloat(d.valor) || 0); 
-                });
+                despesasIniciais.forEach(d => { const p = String(d.placa || 'N/I'); map[p] = (map[p] || 0) + (parseFloat(d.valor) || 0); });
                 const sorted = Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 10);
                 if (sorted.length === 0) return null;
                 return { labels: sorted.map(i => i[0]), datasets: [{ label: 'Custo Total (R$)', data: sorted.map(i => i[1]), backgroundColor: '#f59e0b', borderRadius: 4 }] };
-            }, [despesasIniciais, isGlobal]);
-
-            const dataCentroCusto = useMemo(() => {
-                if (!isGlobal) return null;
-                const map = {};
-                despesasIniciais.forEach(d => {
-                    const v = veiculos.find(ve => ve.placa === d.placa);
-                    const cc = (v && v.centroCusto && String(v.centroCusto).trim() !== '') ? String(v.centroCusto).trim() : 'Sem Centro Atribuído';
-                    map[cc] = (map[cc] || 0) + (parseFloat(d.valor) || 0);
-                });
-                if (Object.keys(map).length === 0) return null;
-                return { labels: Object.keys(map), datasets: [{ data: Object.values(map), backgroundColor: ['#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#64748b'] }] };
-            }, [despesasIniciais, veiculos, isGlobal]);
-
-            const dataTopFornecedores = useMemo(() => {
-                if (!isGlobal) return null;
-                const map = {};
-                despesasIniciais.forEach(d => {
-                    const f = String(d.fornecedor || 'Não Informado').trim();
-                    if (f !== '' && f !== 'Não Informado') {
-                        map[f] = (map[f] || 0) + (parseFloat(d.valor) || 0);
-                    }
-                });
-                const sorted = Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 5);
-                if (sorted.length === 0) return null;
-                return { labels: sorted.map(i => i[0]), datasets: [{ label: 'Total Pago (R$)', data: sorted.map(i => i[1]), backgroundColor: '#0ea5e9', borderRadius: 4 }] };
             }, [despesasIniciais, isGlobal]);
 
             const dataEvolucaoMensal = useMemo(() => {
@@ -277,74 +317,8 @@
                 return { labels: sortedKeys, datasets: [{ label: 'Gasto (R$)', data: sortedKeys.map(k => map[k]), backgroundColor: '#3b82f6', borderRadius: 4 }] };
             }, [despesasIniciais]);
 
-            const dataKmMensal = useMemo(() => {
-                if (!isGlobal) return null;
-                const map = {};
-                rotas.filter(r => r.status === 'Concluída' && r.kmFinal && r.kmInicial).forEach(r => {
-                    const dataBruta = String(r.dataInicial || r.data || "");
-                    if(dataBruta) {
-                        const dateParts = dataBruta.split(' ')[0].split('/');
-                        if (dateParts.length === 3) {
-                            const mes = `${dateParts[2]}-${dateParts[1]}`;
-                            const dist = parseFloat(r.kmFinal) - parseFloat(r.kmInicial);
-                            if (dist > 0) map[mes] = (map[mes] || 0) + dist;
-                        }
-                    }
-                });
-                const sortedKeys = Object.keys(map).sort();
-                if (sortedKeys.length === 0) return null;
-                return { labels: sortedKeys, datasets: [{ label: 'KM Percorrido', data: sortedKeys.map(k => map[k]), backgroundColor: '#8b5cf6', borderRadius: 4 }] };
-            }, [rotas, isGlobal]);
-
-            const dataConsumo = useMemo(() => {
-                if(isGlobal) return null;
-                const abs = despesasIniciais.filter(d => d.categoria === 'Abastecimento' && String(d.descricao || '').includes('L a')).sort((a, b) => new Date(a.data || 0) - new Date(b.data || 0));
-                const labels = []; const data = [];
-                for(let i = 1; i < abs.length; i++) {
-                    const kmAtual = parseFloat(abs[i].km); const kmAnterior = parseFloat(abs[i-1].km);
-                    const match = String(abs[i].descricao || '').match(/\[(.*?)L a/); const litros = match ? parseFloat(match[1]) : 0;
-                    if(kmAtual > kmAnterior && litros > 0) {
-                        const kml = (kmAtual - kmAnterior) / litros;
-                        if(kml > 0 && kml < 30) { labels.push(abs[i].data ? String(abs[i].data).substring(5) : ''); data.push(kml.toFixed(2)); }
-                    }
-                }
-                if (labels.length === 0) return null;
-                return { labels, datasets: [{ label: 'KM por Litro', data, borderColor: '#10b981', backgroundColor: '#10b981', tension: 0.3, fill: false }] };
-            }, [despesasIniciais, isGlobal]);
-
-            const dataCustoKm = useMemo(() => {
-                if (isGlobal) return null;
-                const costMap = {};
-                despesasIniciais.forEach(d => { 
-                    if(d.data && typeof d.data === 'string') costMap[d.data.substring(0, 7)] = (costMap[d.data.substring(0, 7)] || 0) + (parseFloat(d.valor) || 0); 
-                });
-                const kmMap = {};
-                rotas.filter(r => r.placa === veiculoAtivo && r.status === 'Concluída' && r.kmFinal && r.kmInicial).forEach(r => {
-                    const dataBruta = String(r.dataInicial || r.data || "");
-                    if(dataBruta) {
-                        const dp = dataBruta.split(' ')[0].split('/');
-                        if (dp.length === 3) {
-                            const m = `${dp[2]}-${dp[1]}`;
-                            const dist = parseFloat(r.kmFinal) - parseFloat(r.kmInicial);
-                            if (dist > 0) kmMap[m] = (kmMap[m] || 0) + dist;
-                        }
-                    }
-                });
-                const meses = Array.from(new Set([...Object.keys(costMap), ...Object.keys(kmMap)])).sort();
-                const data = meses.map(m => (kmMap[m] > 0) ? ((costMap[m] || 0) / kmMap[m]).toFixed(2) : 0);
-                if (data.filter(v => v > 0).length === 0) return null;
-                return { labels: meses, datasets: [{ label: 'Custo R$ / KM', data, borderColor: '#ef4444', backgroundColor: '#ef4444', tension: 0.3, fill: false }] };
-            }, [despesasIniciais, rotas, veiculoAtivo, isGlobal]);
-
-            const dataPrecoCombustivel = useMemo(() => {
-                if (isGlobal) return null;
-                const abs = despesasIniciais.filter(d => d.categoria === 'Abastecimento' && parseFloat(d.precoLitro) > 0).sort((a,b) => new Date(a.data || 0) - new Date(b.data || 0));
-                if (abs.length === 0) return null;
-                return { labels: abs.map(a => a.data ? String(a.data).substring(5) : ''), datasets: [{ label: 'R$ p/ Litro', data: abs.map(a => parseFloat(a.precoLitro).toFixed(2)), borderColor: '#f59e0b', backgroundColor: '#f59e0b', tension: 0.3, fill: false }] };
-            }, [despesasIniciais, isGlobal]);
-
             // ==========================================
-            // EFEITOS E NUVEM
+            // EFEITOS E SINCRONIZAÇÃO
             // ==========================================
             useEffect(() => {
                 const savedRole = localStorage.getItem('rubi_frota_role');
@@ -428,45 +402,6 @@
             // ==========================================
             // PREENCHIMENTO E AÇÕES
             // ==========================================
-            if (!userRole) {
-                return (
-                    <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6 animate-fade-in">
-                        <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center relative overflow-hidden">
-                            <div className="absolute top-0 left-0 w-full h-2 bg-blue-500"></div>
-                            <h1 className="text-4xl font-black tracking-tight text-blue-600 mb-1 mt-4">RUBI<span className="text-slate-800 font-light">FROTA</span></h1>
-                            <p className="text-slate-500 text-sm mb-10">Selecione o seu perfil de acesso</p>
-                            <div className="space-y-4">
-                                <button onClick={() => {
-                                    const pin = prompt("Digite a senha do Gestor (Padrão: 1234):");
-                                    if (pin === '1234') { setUserRole('GESTOR'); localStorage.setItem('rubi_frota_role', 'GESTOR'); setView('dashboard'); } 
-                                    else if (pin !== null) alert('Senha incorreta!');
-                                }} className="w-full bg-slate-800 text-white font-bold p-4 rounded-2xl hover:bg-slate-900 transition flex items-center justify-center gap-3 shadow-md">
-                                    <span className="text-2xl">👔</span> <span>Acesso Gestor</span>
-                                </button>
-                                <button onClick={() => {
-                                    setUserRole('OPERACIONAL'); localStorage.setItem('rubi_frota_role', 'OPERACIONAL'); setView('rotas');
-                                }} className="w-full bg-blue-50 text-blue-700 font-bold p-4 rounded-2xl border border-blue-200 hover:bg-blue-100 transition flex items-center justify-center gap-3">
-                                    <span className="text-2xl">🚛</span> <span>Acesso Operacional</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
-
-            const despesasFiltradas = despesasIniciais.filter(d => 
-                (d.categoria && String(d.categoria).toLowerCase().includes(searchTerm.toLowerCase())) || 
-                (d.fornecedor && String(d.fornecedor).toLowerCase().includes(searchTerm.toLowerCase())) ||
-                (d.descricao && String(d.descricao).toLowerCase().includes(searchTerm.toLowerCase())) ||
-                (d.placa && String(d.placa).toLowerCase().includes(searchTerm.toLowerCase())) ||
-                (d.rotaVinculada && String(d.rotaVinculada).toLowerCase().includes(searchTerm.toLowerCase()))
-            );
-
-            const lembretesFiltrados = isGlobal ? lembretes : lembretes.filter(l => l.placa === veiculoAtivo);
-            const rotasFiltradas = isGlobal ? rotas.slice().reverse() : rotas.filter(r => r.placa === veiculoAtivo).reverse();
-            const rotasExibicao = userRole === 'OPERACIONAL' ? rotasFiltradas.filter(r => r.status === 'Pendente') : rotasFiltradas;
-            const totalGasto = despesasIniciais.reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0);
-            
             const getKmAtual = (placa) => { const v = veiculos.find(ve => ve.placa === placa); return v ? parseFloat(v.kmAtual) || 0 : 0; };
             const atualizarKmVeiculo = (novoKmInformado, placaVeiculo) => {
                 const novoKm = parseFloat(novoKmInformado);
@@ -648,7 +583,7 @@
                 const novaRota = { 
                     id: finalId, placa: veiculoAtivo, status: 'Pendente', 
                     origem: novaRotaGestor.origem, destino: novaRotaGestor.destino, 
-                    observacoes: novaRotaGestor.observacoes, data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: '', dataInicial: '' 
+                    observacoes: novaRotaGestor.observacoes, data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: '', dataInicial: '', frete: '' 
                 };
                 
                 const novasRotas = [...rotas, novaRota];
@@ -780,29 +715,11 @@
                 }).catch(() => setIsGenerating(false));
             };
 
-            const renderSelectRota = () => (
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl mt-3">
-                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-2">🛣️ Vincular a uma Viagem (Opcional)</label>
-                    <select className="w-full border p-2 rounded-lg text-sm bg-white" value={novaDespesa.rotaVinculada || ''} onChange={e => setNovaDespesa({...novaDespesa, rotaVinculada: e.target.value})}>
-                        <option value="">-- Sem vínculo específico --</option>
-                        {rotasParaVincular.map(r => (
-                            <option key={r.id} value={r.id}>
-                                {r.status === 'Pendente' ? '⏳' : '✅'} {r.status === 'Pendente' ? '(Pendente)' : `[${r.id}]`} {r.origem} ➔ {r.destino}
-                            </option>
-                        ))}
-                    </select>
-                    <p className="text-[10px] text-slate-400 mt-1">Ligue esta despesa a uma viagem para calcular o custo total do frete.</p>
-                </div>
-            );
-
-            // ========================================================
-            // RENDERIZAÇÃO DA INTERFACE PRINCIPAL
-            // ========================================================
+            // RENDERIZAÇÃO
             return (
                 <div className="min-h-screen font-sans text-slate-800 pb-24 md:pb-10 max-w-md md:max-w-4xl mx-auto md:mt-4 shadow-xl bg-white md:rounded-3xl overflow-hidden relative border border-slate-200">
                     
                     <div id="main-ui">
-                        {/* CABEÇALHO SUPERIOR */}
                         <div className="bg-slate-900 text-white p-5 rounded-b-3xl md:rounded-t-3xl md:rounded-b-none shadow-md">
                             <div className="flex justify-between items-center mb-4">
                                 <div className="flex items-center gap-3">
@@ -842,7 +759,6 @@
                             )}
                         </div>
 
-                        {/* ESTADOS DE BLOQUEIO */}
                         {!showCadastro && !showCadastroFunc && veiculos.length === 0 && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4">🚘</span>
@@ -855,26 +771,11 @@
                                 )}
                             </div>
                         )}
-                        {!showCadastro && !showCadastroFunc && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'rotas' || view === 'os' || view === 'abastecimento' || view === 'lembretes' || view === 'despesaGeral') && (
-                            <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
-                                <span className="text-5xl block mb-4 opacity-50">🔒</span>
-                                <h2 className="font-bold text-xl text-slate-700 mb-2">Ação Não Permitida</h2>
-                                <p className="text-sm">Para ver ou preencher formulários, <strong>selecione a matrícula do veículo no menu escuro lá no topo.</strong></p>
-                            </div>
-                        )}
-                        {!showCadastro && !showCadastroFunc && isGlobal && veiculos.length > 0 && userRole === 'OPERACIONAL' && (
-                            <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
-                                <span className="text-5xl block mb-4 opacity-50">👆</span>
-                                <h2 className="font-bold text-xl text-slate-700 mb-2">Selecione a Viatura</h2>
-                                <p className="text-sm">Por favor, escolha o seu veículo no <strong>menu escuro no topo do ecrã</strong> para iniciar a sua jornada.</p>
-                            </div>
-                        )}
 
-                        {/* CADASTRO DE EQUIPA */}
+                        {/* FORMULÁRIOS OCULTOS NO DASHBOARD */}
                         {showCadastroFunc && userRole === 'GESTOR' && (
                             <div className="p-5 animate-fade-in space-y-4">
                                 <h2 className="font-bold text-lg text-slate-800">👥 Registar Membro da Equipa</h2>
-                                <p className="text-xs text-slate-500 mb-2">As pessoas registadas aqui aparecerão nas listas suspensas (dropdowns) de motoristas e ajudantes.</p>
                                 <input className="w-full border p-3 rounded-xl outline-none" placeholder="Nome Completo do Colaborador" value={novoFuncionario.nome} onChange={e => setNovoFuncionario({...novoFuncionario, nome: e.target.value})} />
                                 <select className="w-full border p-3 rounded-xl outline-none bg-white font-bold text-slate-700" value={novoFuncionario.cargo} onChange={e => setNovoFuncionario({...novoFuncionario, cargo: e.target.value})}>
                                     <option value="Motorista">Apenas Motorista</option><option value="Ajudante">Apenas Ajudante</option><option value="Ambos">Motorista & Ajudante</option>
@@ -896,7 +797,6 @@
                             </div>
                         )}
 
-                        {/* CADASTRO DE VEÍCULO */}
                         {showCadastro && userRole === 'GESTOR' && (
                             <div className="p-5 animate-fade-in space-y-4">
                                 <h2 className="font-bold text-lg text-slate-800">Registar Novo Veículo</h2>
@@ -914,13 +814,10 @@
                             </div>
                         )}
 
-                        {/* ======================================================== */}
-                        {/* ÁREA PRINCIPAL DOS FORMULÁRIOS E GRÁFICOS */}
-                        {/* ======================================================== */}
+                        {/* BLOCO CENTRAL COM DASHBOARD INTELIGENTE */}
                         {!showCadastro && !showCadastroFunc && veiculos.length > 0 && (!isGlobal || (isGlobal && userRole === 'GESTOR' && (view === 'dashboard' || view === 'historico'))) && (
                             <div className="p-4 space-y-4 mb-16">
                                 
-                                {/* 1. DASHBOARD INTELIGENTE */}
                                 {view === 'dashboard' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         
@@ -936,6 +833,32 @@
                                             </div>
                                         )}
 
+                                        {/* NOVO: PAINEL DE RISCO (GLOBAL) */}
+                                        {isGlobal && painelRisco && (painelRisco.critico > 0 || painelRisco.atencao > 0) && (
+                                            <div className={`p-4 rounded-2xl shadow-sm border ${painelRisco.critico > 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-3xl">{painelRisco.critico > 0 ? '🚨' : '⚠️'}</span>
+                                                    <div>
+                                                        <h3 className={`font-black text-sm uppercase ${painelRisco.critico > 0 ? 'text-red-800' : 'text-amber-800'}`}>Painel de Risco</h3>
+                                                        <p className={`text-xs font-bold mt-1 ${painelRisco.critico > 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                                                            {painelRisco.critico > 0 ? `${painelRisco.critico} intervenções atrasadas na frota!` : `${painelRisco.atencao} intervenções a vencer em breve.`}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* NOVO: ALERTA DE CONSUMO (INDIVIDUAL) */}
+                                        {!isGlobal && alertaConsumo && (
+                                            <div className="p-4 rounded-2xl shadow-sm border bg-red-50 border-red-200 flex items-center gap-3">
+                                                <span className="text-3xl">⛽</span>
+                                                <div>
+                                                    <h3 className="font-black text-sm uppercase text-red-800">Alarme de Consumo</h3>
+                                                    <p className="text-xs font-bold mt-1 text-red-600">{alertaConsumo}</p>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <div className="bg-slate-800 text-white p-4 rounded-2xl shadow-sm flex flex-col gap-3">
                                             <div className="flex justify-between items-center border-b border-slate-700 pb-3">
                                                 <div>
@@ -944,33 +867,59 @@
                                                 </div>
                                                 <span className="text-3xl">{isGlobal ? '🏢' : '🚘'}</span>
                                             </div>
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <div>
-                                                    <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Custo Total</p>
-                                                    <p className="text-xl font-black text-blue-400">{formatCurrency(totalGasto)}</p>
+                                            
+                                            {/* SE FOR GLOBAL MOSTRA CUSTO POR KM DA EMPRESA, SENÃO MOSTRA KM DO CARRO */}
+                                            {isGlobal ? (
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Custo da Operação</p>
+                                                        <p className="text-xl font-black text-blue-400">{formatCurrency(totalGasto)}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Custo Médio / KM</p>
+                                                        <p className="text-xl font-black text-emerald-400">R$ {custoKmGlobal}</p>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">{isGlobal ? 'Intervenções' : 'KM Atual'}</p>
-                                                    <p className="text-xl font-black text-white">{isGlobal ? `${despesasIniciais.length} Regs.` : kmAtualNum.toLocaleString()}</p>
+                                            ) : (
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Custo Total</p>
+                                                        <p className="text-xl font-black text-blue-400">{formatCurrency(totalGasto)}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">KM Atual</p>
+                                                        <p className="text-xl font-black text-white">{kmAtualNum.toLocaleString()}</p>
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            )}
                                         </div>
 
                                         {/* BARRAS DE SAÚDE (DUAL BARS) */}
-                                        {(statsPrevCorr || statsPecasMO) && (
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                {isGlobal && statsPrevCorr && <DualBar title="Saúde da Frota (Tipos de O.S.)" label1="Preventiva" val1={statsPrevCorr.prev} color1="#10b981" label2="Corretiva" val2={statsPrevCorr.corr} color2="#ef4444" />}
-                                                {!isGlobal && statsPecasMO && <DualBar title="Custos de Oficina" label1="Mão de Obra" val1={statsPecasMO.mo} color1="#8b5cf6" label2="Peças" val2={statsPecasMO.pecas} color2="#ec4899" />}
-                                                {!isGlobal && statsPrevCorr && <DualBar title="Saúde deste Veículo" label1="Preventiva" val1={statsPrevCorr.prev} color1="#10b981" label2="Corretiva" val2={statsPrevCorr.corr} color2="#ef4444" />}
-                                            </div>
-                                        )}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {isGlobal && statsPrevCorr && <DualBar title="Saúde da Frota (Tipos de O.S.)" label1="Preventiva" val1={statsPrevCorr.prev} color1="#10b981" label2="Corretiva" val2={statsPrevCorr.corr} color2="#ef4444" />}
+                                            {isGlobal && statsOficinaInternaExterna && <DualBar title="Oficina: Make or Buy" label1="Serviço Interno" val1={statsOficinaInternaExterna.interna} color1="#3b82f6" label2="Serviço Externo" val2={statsOficinaInternaExterna.externa} color2="#f97316" />}
+                                            
+                                            {!isGlobal && statsPecasMO && <DualBar title="Custos de Oficina" label1="Mão de Obra" val1={statsPecasMO.mo} color1="#8b5cf6" label2="Peças" val2={statsPecasMO.pecas} color2="#ec4899" />}
+                                            {!isGlobal && statsPrevCorr && <DualBar title="Saúde deste Veículo" label1="Preventiva" val1={statsPrevCorr.prev} color1="#10b981" label2="Corretiva" val2={statsPrevCorr.corr} color2="#ef4444" />}
+                                            {!isGlobal && statsDiasOperacao && (
+                                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-center min-h-[140px]">
+                                                    <h3 className="text-xs font-bold text-slate-600 uppercase mb-4 text-center">Disponibilidade (Dias)</h3>
+                                                    <div className="flex w-full h-4 rounded-full overflow-hidden mb-3 bg-slate-100 shadow-inner">
+                                                        <div style={{width: `${(statsDiasOperacao.rodando / (statsDiasOperacao.rodando+statsDiasOperacao.oficina))*100}%`, backgroundColor: '#3b82f6'}}></div>
+                                                        <div style={{width: `${(statsDiasOperacao.oficina / (statsDiasOperacao.rodando+statsDiasOperacao.oficina))*100}%`, backgroundColor: '#f59e0b'}}></div>
+                                                    </div>
+                                                    <div className="flex justify-between items-start text-xs font-black">
+                                                        <div className="flex flex-col"><span className="text-blue-500 text-[10px] uppercase">Em Operação</span><span className="text-slate-700">{statsDiasOperacao.rodando} dias</span></div>
+                                                        <div className="flex flex-col text-right"><span className="text-amber-500 text-[10px] uppercase">Na Oficina</span><span className="text-slate-700">{statsDiasOperacao.oficina} dias</span></div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
 
                                         {/* GRÁFICOS INTELIGENTES / CARTÕES DE INSIGHT */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                                             {/* Universais / Globais */}
                                             {isGlobal && renderChartOrInsight(dataPorCategoria, 'doughnut', 'Distribuição de Custos')}
-                                            {isGlobal && renderChartOrInsight(dataMediaCategoria, 'bar', 'Custo Médio por Categoria', false, {indexAxis: 'y'})}
-                                            {isGlobal && renderChartOrInsight(dataMediaKmDestino, 'bar', 'Média de KM por Destino', false, {indexAxis: 'y'})}
                                             {isGlobal && renderChartOrInsight(dataCentroCusto, 'doughnut', 'Despesas por Centro de Custo')}
                                             {isGlobal && renderChartOrInsight(dataRankingVeiculos, 'bar', 'Top Custos por Viatura', false, {indexAxis: 'y'})}
                                             {isGlobal && renderChartOrInsight(dataTopFornecedores, 'bar', 'Top 5 Fornecedores', false, {indexAxis: 'y'})}
@@ -979,7 +928,7 @@
 
                                             {/* Individuais */}
                                             {!isGlobal && renderChartOrInsight(dataPorCategoria, 'doughnut', 'Distribuição de Custos')}
-                                            {!isGlobal && renderChartOrInsight(dataMediaCategoria, 'bar', 'Custo Médio por Categoria', false, {indexAxis: 'y'})}
+                                            {!isGlobal && renderChartOrInsight(dataMediaCategoria, 'bar', 'Ticket Médio por Despesa', false, {indexAxis: 'y'})}
                                             {!isGlobal && renderChartOrInsight(dataMediaKmDestino, 'bar', 'Média de KM por Destino', false, {indexAxis: 'y'})}
                                             {!isGlobal && renderChartOrInsight(dataEvolucaoMensal, 'bar', 'Evolução Mensal de Gastos', true)}
                                             {!isGlobal && renderChartOrInsight(dataCustoKm, 'line', 'Custo por KM (R$/KM)', true)}
@@ -987,8 +936,38 @@
                                             {!isGlobal && renderChartOrInsight(dataPrecoCombustivel, 'line', 'Preço Combustível (R$/L)', true)}
                                         </div>
 
+                                        {/* MÓDULOS ESPECIAIS: RANKING E OCIOSIDADE (GLOBAL) */}
+                                        {isGlobal && rankingMotoristas.length > 0 && (
+                                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 mt-4">
+                                                <h3 className="text-xs font-bold text-slate-600 uppercase mb-4">🏆 Top Motoristas (Mais KM Rodados)</h3>
+                                                <div className="space-y-3">
+                                                    {rankingMotoristas.map((m, idx) => (
+                                                        <div key={idx} className="flex justify-between items-center border-b border-slate-100 pb-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-lg font-black text-slate-400">{idx+1}º</span>
+                                                                <span className="font-bold text-slate-800 text-sm">{m[0]}</span>
+                                                            </div>
+                                                            <span className="font-black text-blue-700 text-sm">{m[1].toLocaleString()} KM</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {isGlobal && veiculosOciosos.length > 0 && (
+                                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 mt-4">
+                                                <h3 className="text-xs font-bold text-slate-600 uppercase mb-2">⏳ Veículos Ociosos (>30 dias sem rotas)</h3>
+                                                <p className="text-[10px] text-slate-400 mb-3">Estes veículos estão a gerar despesa fixa sem faturar.</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {veiculosOciosos.map((v, i) => (
+                                                        <span key={i} className="bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-lg border text-xs">{v.placa}</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {isGlobal ? (
-                                            <div className="mt-2">
+                                            <div className="mt-4">
                                                 <h3 className="font-bold text-slate-700 text-sm mb-3">Painel da Frota (Cartões)</h3>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                                     {veiculos.map(v => {
@@ -1024,7 +1003,7 @@
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className="space-y-4">
+                                            <div className="space-y-4 mt-4">
                                                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                                                     <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center">
                                                         <h3 className="font-bold text-slate-700 text-sm">Estado da Manutenção</h3>
@@ -1056,11 +1035,12 @@
                                     </div>
                                 )}
 
-                                {/* 2. ROTAS */}
+                                {/* =======================================
+                                    2. ROTAS (COM LUCRO/FRETE)
+                                ======================================== */}
                                 {view === 'rotas' && !isGlobal && (
                                     <div className="animate-fade-in space-y-4">
                                         
-                                        {/* GESTOR CRIA A ROTA */}
                                         {userRole === 'GESTOR' && execucaoRota === null && (
                                             <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 space-y-3">
                                                 <h3 className="font-bold text-blue-800 text-sm flex items-center gap-2">🗺️ Agendar Rota</h3>
@@ -1073,7 +1053,6 @@
                                             </div>
                                         )}
 
-                                        {/* FORMULÁRIO DE EXECUÇÃO */}
                                         {execucaoRota !== null ? (
                                             <div className="bg-white p-4 rounded-2xl border border-amber-300 shadow-lg relative">
                                                 <button onClick={() => setExecucaoRota(null)} className="absolute top-4 right-4 text-slate-400 font-bold text-xs bg-slate-100 px-2 py-1 rounded">Voltar</button>
@@ -1152,6 +1131,16 @@
                                                             <input type="number" className="w-full border-2 border-blue-400 p-2 rounded-lg text-sm font-bold" placeholder="Ao chegar" value={execucaoRota.kmFinal} onChange={e => setExecucaoRota({...execucaoRota, kmFinal: e.target.value})} />
                                                         </div>
                                                     </div>
+                                                    
+                                                    {/* NOVO: CAMPO DE FATURAMENTO (FRETE) APENAS PARA O GESTOR */}
+                                                    {userRole === 'GESTOR' && (
+                                                        <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl mt-2">
+                                                            <label className="text-[10px] font-bold text-emerald-800 uppercase flex items-center gap-1 mb-1">💰 Valor Faturado na Viagem (Frete)</label>
+                                                            <input type="number" className="w-full border border-emerald-300 p-2 rounded-lg text-sm font-black text-emerald-900 bg-white" placeholder="R$ 0,00" value={execucaoRota.frete || ''} onChange={e => setExecucaoRota({...execucaoRota, frete: e.target.value})} />
+                                                            <p className="text-[9px] text-emerald-600 mt-1">Preencha para o sistema calcular o Lucro da rota automaticamente.</p>
+                                                        </div>
+                                                    )}
+
                                                     {formError && <p className="text-red-500 font-bold text-xs text-center">{formError}</p>}
                                                     <div className="flex gap-2 pt-2 border-t border-slate-100">
                                                         <button onClick={handleSalvarRascunhoRota} className="w-1/2 bg-slate-100 border text-slate-600 font-bold p-3 rounded-xl text-sm hover:bg-slate-200">💾 Rascunho</button>
@@ -1175,6 +1164,9 @@
                                                     {rotasExibicao.map(r => {
                                                         const despesasDaRota = despesasIniciais.filter(d => String(d.rotaVinculada) === String(r.id));
                                                         const totalDespesasRota = despesasDaRota.reduce((sum, d) => sum + (parseFloat(d.valor) || 0), 0);
+                                                        const valorFrete = parseFloat(r.frete) || 0;
+                                                        const lucro = valorFrete - totalDespesasRota;
+                                                        const margem = valorFrete > 0 ? ((lucro / valorFrete) * 100).toFixed(0) : 0;
                                                         
                                                         return (
                                                             <div key={r.id} className={`p-4 rounded-xl border ${r.status === 'Pendente' ? 'bg-white border-amber-300 shadow-sm' : 'bg-white border-slate-200 shadow-sm'}`}>
@@ -1203,22 +1195,37 @@
                                                                     </div>
                                                                 )}
                                                                 
-                                                                {userRole === 'GESTOR' && despesasDaRota.length > 0 && (
+                                                                {/* RESUMO FINANCEIRO E LUCRO DA ROTA */}
+                                                                {userRole === 'GESTOR' && (despesasDaRota.length > 0 || valorFrete > 0) && (
                                                                     <details className="bg-emerald-50 rounded-lg border border-emerald-200 mb-3 shadow-sm group/financeiro">
                                                                         <summary className="p-2 text-[11px] text-emerald-800 font-bold flex justify-between items-center cursor-pointer outline-none select-none">
-                                                                            <span>💰 Resumo Financeiro da Viagem</span>
+                                                                            <span>💰 Resumo de Rentabilidade</span>
                                                                             <div className="flex items-center gap-2">
-                                                                                <span className="font-black text-emerald-900">{formatCurrency(totalDespesasRota)}</span>
+                                                                                <span className={`font-black ${lucro < 0 ? 'text-red-600' : 'text-emerald-900'}`}>{lucro >= 0 ? '+' : ''}{formatCurrency(lucro)}</span>
                                                                                 <span className="text-emerald-600 group-open/financeiro:rotate-180 transition-transform">▼</span>
                                                                             </div>
                                                                         </summary>
                                                                         <div className="p-2 pt-0 text-[11px]">
+                                                                            
+                                                                            <div className="flex justify-between items-center mt-1 border-t border-emerald-100 pt-1">
+                                                                                <span className="text-emerald-800 font-bold">Faturamento (Frete)</span>
+                                                                                <span className="font-bold text-emerald-900">{formatCurrency(valorFrete)}</span>
+                                                                            </div>
+                                                                            
                                                                             {despesasDaRota.map((d, idx) => (
                                                                                 <div key={idx} className="flex justify-between items-center mb-0.5 mt-1 border-t border-emerald-100 pt-1">
-                                                                                    <span className="text-emerald-700 truncate mr-2">{d.categoria} {d.fornecedor ? `(${d.fornecedor})` : ''}</span>
-                                                                                    <span className="font-bold text-emerald-900">{formatCurrency(d.valor)}</span>
+                                                                                    <span className="text-emerald-700 truncate mr-2 ml-2">(-) {d.categoria}</span>
+                                                                                    <span className="font-bold text-red-700">-{formatCurrency(d.valor)}</span>
                                                                                 </div>
                                                                             ))}
+
+                                                                            <div className="flex justify-between items-center mt-2 pt-1 border-t-2 border-emerald-300">
+                                                                                <span className="text-emerald-900 font-black uppercase text-[10px]">Lucro da Viagem</span>
+                                                                                <span className={`font-black text-sm ${lucro < 0 ? 'text-red-600' : 'text-emerald-900'}`}>{formatCurrency(lucro)}</span>
+                                                                            </div>
+                                                                            {valorFrete > 0 && lucro > 0 && (
+                                                                                <div className="text-right mt-1"><span className="bg-emerald-200 text-emerald-800 px-1 py-0.5 rounded font-black text-[9px]">MARGEM: {margem}%</span></div>
+                                                                            )}
                                                                         </div>
                                                                     </details>
                                                                 )}
@@ -1243,6 +1250,7 @@
                                     </div>
                                 )}
 
+                                {/* ABASTECIMENTO / OS / DESPESAS / LEMBRETES / HISTÓRICO... (Mantidos) */}
                                 {/* 3. ABASTECIMENTO */}
                                 {view === 'abastecimento' && !isGlobal && (
                                     <div className="bg-white p-1 animate-fade-in">
@@ -1452,7 +1460,7 @@
                             </div>
                         )}
 
-                        {/* MENU INFERIOR (SCROLLABLE NO GESTOR) */}
+                        {/* MENU INFERIOR */}
                         {!showCadastro && !showCadastroFunc && veiculos.length > 0 && (
                             <div className="fixed md:absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 px-1 py-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 overflow-x-auto hide-scroll flex gap-2">
                                 {userRole === 'GESTOR' ? (
@@ -1497,12 +1505,6 @@
                                 )}
                             </div>
                         )}
-                    </div>
-                    
-                    <div id="pdf-content" style={{ display: 'none', width: '100%', backgroundColor: 'white', color: 'black', fontFamily: 'Arial', padding: '10px' }}>
-                        <div className="bg-slate-800 text-white rounded-lg p-2 mb-3 text-center">
-                            <h1 className="text-xl font-bold uppercase">{isGlobal ? 'Dossiê Consolidado RUBI FROTA' : 'Dossiê de Manutenção'}</h1>
-                        </div>
                     </div>
                 </div>
             );
