@@ -4,14 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RUBI FROTA - Gestão Inteligente</title>
-    <!-- Bibliotecas -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    
-    <!-- Biblioteca Gráfica (Chart.js) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <link rel="manifest" href="manifest.json">
@@ -22,11 +19,7 @@
         details > summary::-webkit-details-marker { display: none; }
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fadeIn 0.3s ease forwards; }
     </style>
 </head>
@@ -37,10 +30,6 @@
         const { useState, useEffect, useRef, useMemo } = React;
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7N4C1lZperjJZiDlk_SPDEl4OlfvuvbjdePeWKa-qr2ojbu4kmL862ntMjjcZNPrPQQ/exec';
 
-        // =======================================================
-        // COMPONENTES AUXILIARES (Design Inteligente)
-        // =======================================================
-        
         const formatCurrency = (val) => isNaN(parseFloat(val)) ? 'R$ 0,00' : parseFloat(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
         const ChartWrapper = ({ type, data, options }) => {
@@ -53,7 +42,6 @@
                 chartInstance.current = new window.Chart(ctx, { type, data, options: { ...options, maintainAspectRatio: false } });
                 return () => { if (chartInstance.current) chartInstance.current.destroy(); };
             }, [type, data, options]);
-            
             if(!data) return null;
             return (
                 <div className="relative w-full h-[230px] flex items-center justify-center">
@@ -92,15 +80,14 @@
         const renderChartOrInsight = (dataObj, type, title, isForceTemporalChart = false, customOptions = {}) => {
             if(!dataObj || !dataObj.labels || dataObj.labels.length === 0) return null;
             
-            // Cartão de Insight (Se só houver 1 variável de dados e não for gráfico temporal)
             if (!isForceTemporalChart && dataObj.labels.length === 1) {
                 return (
                     <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-center items-center text-center h-full min-h-[250px]">
                         <span className="text-4xl mb-3 opacity-90">💡</span>
                         <h3 className="text-[10px] font-bold text-slate-400 uppercase mb-2">{title}</h3>
                         <p className="text-xl font-black text-slate-700 leading-tight px-2">{dataObj.labels[0]}</p>
-                        <p className="text-sm font-bold text-blue-600 mt-2">{formatCurrency(dataObj.datasets[0].data[0])}</p>
-                        <span className="bg-slate-50 text-slate-400 text-[9px] px-2 py-1 rounded mt-4 uppercase font-bold border border-slate-200">100% dos Registos</span>
+                        <p className="text-sm font-bold text-blue-600 mt-2">{formatCurrency(dataObj.datasets[0].data[0]) || dataObj.datasets[0].data[0]}</p>
+                        <span className="bg-slate-50 text-slate-400 text-[9px] px-2 py-1 rounded mt-4 uppercase font-bold border border-slate-200">Dado único isolado</span>
                     </div>
                 );
             }
@@ -116,9 +103,6 @@
             );
         };
 
-        // =======================================================
-        // APLICAÇÃO PRINCIPAL
-        // =======================================================
         function ControleFrotaMulti() {
             const [userRole, setUserRole] = useState(null); 
             const [veiculos, setVeiculos] = useState([]);
@@ -170,9 +154,6 @@
                 return r ? (r.status === 'Pendente' ? `⏳ ${r.origem} ➔ ${r.destino}` : `${r.id} (${r.origem} ➔ ${r.destino})`) : `Rota ${rotaId}`;
             };
 
-            // ==========================================
-            // CÁLCULOS GRÁFICOS PROTEGIDOS
-            // ==========================================
             const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#0ea5e9'];
             
             const statsPrevCorr = useMemo(() => {
@@ -199,6 +180,59 @@
                 if (Object.keys(map).length === 0) return null;
                 return { labels: Object.keys(map), datasets: [{ data: Object.values(map), backgroundColor: coresGrafico, borderWidth: 1 }] };
             }, [despesasIniciais]);
+
+            // NOVO: Custo Médio por Categoria (Ticket Médio)
+            const dataMediaCategoria = useMemo(() => {
+                const map = {};
+                despesasIniciais.forEach(d => {
+                    const cat = d.categoria;
+                    const val = parseFloat(d.valor) || 0;
+                    if (val > 0) {
+                        if (!map[cat]) map[cat] = { total: 0, count: 0 };
+                        map[cat].total += val;
+                        map[cat].count += 1;
+                    }
+                });
+                const labels = Object.keys(map).sort();
+                if (labels.length === 0) return null;
+                return {
+                    labels,
+                    datasets: [{
+                        label: 'Ticket Médio (R$)',
+                        data: labels.map(k => (map[k].total / map[k].count).toFixed(2)),
+                        backgroundColor: '#8b5cf6',
+                        borderRadius: 4
+                    }]
+                };
+            }, [despesasIniciais]);
+
+            // NOVO: Média de KM por Destino
+            const dataMediaKmDestino = useMemo(() => {
+                const map = {};
+                const rotasFiltradas = isGlobal ? rotas : rotas.filter(r => r.placa === veiculoAtivo);
+                
+                rotasFiltradas.filter(r => r.status === 'Concluída' && r.kmFinal && r.kmInicial).forEach(r => {
+                    const dist = parseFloat(r.kmFinal) - parseFloat(r.kmInicial);
+                    const dest = (r.destino || 'Desconhecido').trim().toUpperCase();
+                    if (dist > 0) {
+                        if (!map[dest]) map[dest] = { totalKm: 0, count: 0 };
+                        map[dest].totalKm += dist;
+                        map[dest].count += 1;
+                    }
+                });
+                
+                const labels = Object.keys(map).sort();
+                if (labels.length === 0) return null;
+                return {
+                    labels,
+                    datasets: [{
+                        label: 'Média de Distância (KM)',
+                        data: labels.map(k => (map[k].totalKm / map[k].count).toFixed(0)),
+                        backgroundColor: '#14b8a6',
+                        borderRadius: 4
+                    }]
+                };
+            }, [rotas, isGlobal, veiculoAtivo]);
 
             const dataRankingVeiculos = useMemo(() => {
                 if(!isGlobal) return null;
@@ -308,9 +342,6 @@
                 return { labels: abs.map(a => a.data ? a.data.substring(5) : ''), datasets: [{ label: 'R$ p/ Litro', data: abs.map(a => parseFloat(a.precoLitro).toFixed(2)), borderColor: '#f59e0b', backgroundColor: '#f59e0b', tension: 0.3, fill: false }] };
             }, [despesasIniciais, isGlobal]);
 
-            // ==========================================
-            // EFEITOS E NUVEM
-            // ==========================================
             useEffect(() => {
                 const savedRole = localStorage.getItem('rubi_frota_role');
                 if (savedRole) { setUserRole(savedRole); if (savedRole === 'OPERACIONAL') setView('rotas'); }
@@ -390,9 +421,6 @@
                 reader.readAsText(file);
             };
 
-            // ==========================================
-            // PREENCHIMENTO E AÇÕES
-            // ==========================================
             if (!userRole) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6 animate-fade-in">
@@ -430,7 +458,6 @@
             const lembretesFiltrados = isGlobal ? lembretes : lembretes.filter(l => l.placa === veiculoAtivo);
             const rotasFiltradas = isGlobal ? rotas.slice().reverse() : rotas.filter(r => r.placa === veiculoAtivo).reverse();
             
-            // Oculta rotas concluídas para o motorista
             const rotasExibicao = userRole === 'OPERACIONAL' ? rotasFiltradas.filter(r => r.status === 'Pendente') : rotasFiltradas;
             
             const totalGasto = despesasIniciais.reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0);
@@ -697,77 +724,7 @@
                 }
             };
 
-            // AS 4 FUNÇÕES QUE TINHAM SIDO APAGADAS VOLTARAM AQUI! 
-            const checkStatusLembrete = (lembrete) => {
-                const kmDoVeiculoAlvo = getKmAtual(lembrete.placa);
-                let status = { cor: 'bg-green-50 border-green-500 text-green-700', icone: '✅', msg: 'No Prazo', critico: false };
-                if (lembrete.freqKm) {
-                    const limiteKm = parseFloat(lembrete.ultimoKm) + parseFloat(lembrete.freqKm);
-                    if (kmDoVeiculoAlvo >= limiteKm) return { cor: 'bg-red-50 border-red-500 text-red-700', icone: '🚨', msg: 'Vencido (KM)', critico: true };
-                    else if (limiteKm - kmDoVeiculoAlvo <= 1000) status = { cor: 'bg-amber-50 border-amber-500 text-amber-700', icone: '⚠️', msg: 'Atenção: KM Próximo', critico: false };
-                }
-                if (lembrete.freqMeses && !status.critico) {
-                    const dataLimite = new Date(lembrete.ultimaData);
-                    dataLimite.setMonth(dataLimite.getMonth() + parseInt(lembrete.freqMeses));
-                    const hoje = new Date();
-                    if (hoje >= dataLimite) return { cor: 'bg-red-50 border-red-500 text-red-700', icone: '🚨', msg: 'Vencido (Prazo)', critico: true };
-                    else {
-                        const diffDias = (dataLimite - hoje) / (1000 * 60 * 60 * 24);
-                        if (diffDias <= 15) status = { cor: 'bg-amber-50 border-amber-500 text-amber-700', icone: '📅', msg: 'Atenção: Prazo Próximo', critico: false };
-                    }
-                }
-                return status;
-            };
-
-            const checkSaudeVeiculo = (placa) => {
-                const lembretesDoVeiculo = lembretes.filter(l => l.placa === placa);
-                if (lembretesDoVeiculo.length === 0) return 'OK';
-                let temCritico = false;
-                let temAviso = false;
-                lembretesDoVeiculo.forEach(l => {
-                    const st = checkStatusLembrete(l);
-                    if (st.critico) temCritico = true;
-                    if (st.icone === '⚠️' || st.icone === '📅') temAviso = true;
-                });
-                if (temCritico) return 'CRITICO';
-                if (temAviso) return 'AVISO';
-                return 'OK';
-            };
-
-            const generatePDF = () => {
-                setIsGenerating(true);
-                const mainUi = document.getElementById('main-ui');
-                const pdfContent = document.getElementById('pdf-content');
-                mainUi.style.display = 'none';
-                pdfContent.style.display = 'block';
-                window.scrollTo(0, 0);
-                const filename = isGlobal ? `Relatorio_RUBI_FROTA_Global.pdf` : `Dossie_${veiculoAtual.placa}.pdf`;
-                const opt = { margin: [5, 5, 10, 5], filename: filename, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
-                window.html2pdf().set(opt).from(pdfContent).save().then(() => {
-                    mainUi.style.display = 'block';
-                    pdfContent.style.display = 'none';
-                    setIsGenerating(false);
-                }).catch(() => setIsGenerating(false));
-            };
-
-            const renderSelectRota = () => (
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl mt-3">
-                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-2">🛣️ Vincular a uma Viagem (Opcional)</label>
-                    <select className="w-full border p-2 rounded-lg text-sm bg-white" value={novaDespesa.rotaVinculada || ''} onChange={e => setNovaDespesa({...novaDespesa, rotaVinculada: e.target.value})}>
-                        <option value="">-- Sem vínculo específico --</option>
-                        {rotasParaVincular.map(r => (
-                            <option key={r.id} value={r.id}>
-                                {r.status === 'Pendente' ? '⏳' : '✅'} {r.status === 'Pendente' ? '(Pendente)' : `[${r.id}]`} {r.origem} ➔ {r.destino}
-                            </option>
-                        ))}
-                    </select>
-                    <p className="text-[10px] text-slate-400 mt-1">Ligue esta despesa a uma viagem para calcular o custo total do frete.</p>
-                </div>
-            );
-
-            // ========================================================
-            // RENDERIZAÇÃO DA INTERFACE PRINCIPAL
-            // ========================================================
+            // RENDERIZAÇÃO PRINCIPAL
             return (
                 <div className="min-h-screen font-sans text-slate-800 pb-24 md:pb-10 max-w-md md:max-w-4xl mx-auto md:mt-4 shadow-xl bg-white md:rounded-3xl overflow-hidden relative border border-slate-200">
                     
@@ -823,7 +780,6 @@
                                 )}
                             </div>
                         )}
-                        
                         {!showCadastro && !showCadastroFunc && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'rotas' || view === 'os' || view === 'abastecimento' || view === 'lembretes' || view === 'despesaGeral') && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4 opacity-50">🔒</span>
@@ -831,7 +787,6 @@
                                 <p className="text-sm">Para ver ou preencher formulários, <strong>selecione a matrícula do veículo no menu escuro lá no topo.</strong></p>
                             </div>
                         )}
-                        
                         {!showCadastro && !showCadastroFunc && isGlobal && veiculos.length > 0 && userRole === 'OPERACIONAL' && (
                             <div className="p-10 text-center text-slate-500 animate-fade-in mt-10">
                                 <span className="text-5xl block mb-4 opacity-50">👆</span>
@@ -840,9 +795,7 @@
                             </div>
                         )}
 
-                        {/* ======================================================== */}
-                        {/* FORMULÁRIO DE FUNCIONÁRIO (GESTOR) */}
-                        {/* ======================================================== */}
+                        {/* CADASTRO DE EQUIPA */}
                         {showCadastroFunc && userRole === 'GESTOR' && (
                             <div className="p-5 animate-fade-in space-y-4">
                                 <h2 className="font-bold text-lg text-slate-800">👥 Registar Membro da Equipa</h2>
@@ -868,9 +821,7 @@
                             </div>
                         )}
 
-                        {/* ======================================================== */}
-                        {/* FORMULÁRIO DE VEÍCULO (GESTOR) */}
-                        {/* ======================================================== */}
+                        {/* CADASTRO DE VEÍCULO */}
                         {showCadastro && userRole === 'GESTOR' && (
                             <div className="p-5 animate-fade-in space-y-4">
                                 <h2 className="font-bold text-lg text-slate-800">Registar Novo Veículo</h2>
@@ -892,7 +843,7 @@
                         {!showCadastro && !showCadastroFunc && veiculos.length > 0 && (!isGlobal || (isGlobal && userRole === 'GESTOR' && (view === 'dashboard' || view === 'historico'))) && (
                             <div className="p-4 space-y-4 mb-16">
                                 
-                                {/* 1. DASHBOARD */}
+                                {/* 1. DASHBOARD INTELIGENTE */}
                                 {view === 'dashboard' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-4">
                                         
@@ -937,20 +888,26 @@
                                             </div>
                                         )}
 
-                                        {/* GRÁFICOS INTELIGENTES / CARTÕES DE INSIGHT */}
+                                        {/* GRÁFICOS INTELIGENTES */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                            {/* Universais / Globais */}
                                             {isGlobal && renderChartOrInsight(dataPorCategoria, 'doughnut', 'Distribuição de Custos')}
+                                            {isGlobal && renderChartOrInsight(dataMediaCategoria, 'bar', 'Custo Médio por Categoria', false, {indexAxis: 'y'})}
+                                            {isGlobal && renderChartOrInsight(dataMediaKmDestino, 'bar', 'Média de KM por Destino', false, {indexAxis: 'y'})}
                                             {isGlobal && renderChartOrInsight(dataCentroCusto, 'doughnut', 'Despesas por Centro de Custo')}
                                             {isGlobal && renderChartOrInsight(dataRankingVeiculos, 'bar', 'Top Custos por Viatura', false, {indexAxis: 'y'})}
                                             {isGlobal && renderChartOrInsight(dataTopFornecedores, 'bar', 'Top 5 Fornecedores', false, {indexAxis: 'y'})}
                                             {isGlobal && renderChartOrInsight(dataEvolucaoMensal, 'bar', 'Evolução Mensal de Gastos', true)}
                                             {isGlobal && renderChartOrInsight(dataKmMensal, 'bar', 'Evolução de KM Rodado', true)}
 
+                                            {/* Individuais */}
                                             {!isGlobal && renderChartOrInsight(dataPorCategoria, 'doughnut', 'Distribuição de Custos')}
+                                            {!isGlobal && renderChartOrInsight(dataMediaCategoria, 'bar', 'Custo Médio por Categoria', false, {indexAxis: 'y'})}
+                                            {!isGlobal && renderChartOrInsight(dataMediaKmDestino, 'bar', 'Média de KM por Destino', false, {indexAxis: 'y'})}
                                             {!isGlobal && renderChartOrInsight(dataEvolucaoMensal, 'bar', 'Evolução Mensal de Gastos', true)}
                                             {!isGlobal && renderChartOrInsight(dataCustoKm, 'line', 'Custo por KM (R$/KM)', true)}
                                             {!isGlobal && renderChartOrInsight(dataConsumo, 'line', 'Evolução de Consumo (KM/L)', true)}
-                                            {!isGlobal && renderChartOrInsight(dataPrecoCombustivel, 'line', 'Preço do Combustível Pago (R$/L)', true)}
+                                            {!isGlobal && renderChartOrInsight(dataPrecoCombustivel, 'line', 'Preço Combustível (R$/L)', true)}
                                         </div>
 
                                         {isGlobal ? (
@@ -1022,9 +979,7 @@
                                     </div>
                                 )}
 
-                                {/* =======================================
-                                    2. ROTAS (VISÃO LIMPA)
-                                ======================================== */}
+                                {/* 2. ROTAS */}
                                 {view === 'rotas' && !isGlobal && (
                                     <div className="animate-fade-in space-y-4">
                                         
@@ -1126,9 +1081,6 @@
                                                 </div>
                                             </div>
                                         ) : (
-                                            /* ========================================================
-                                               LISTA DE ROTAS
-                                               ======================================================== */
                                             <details className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-4 group/diario" open={userRole === 'OPERACIONAL'}>
                                                 <summary className={`bg-slate-50 p-4 font-bold text-slate-700 text-sm flex justify-between items-center outline-none select-none ${userRole === 'GESTOR' ? 'cursor-pointer' : 'hidden'}`}>
                                                     <div className="flex items-center gap-2">
@@ -1172,7 +1124,6 @@
                                                                     </div>
                                                                 )}
                                                                 
-                                                                {/* RESUMO FINANCEIRO */}
                                                                 {userRole === 'GESTOR' && despesasDaRota.length > 0 && (
                                                                     <details className="bg-emerald-50 rounded-lg border border-emerald-200 mb-3 shadow-sm group/financeiro">
                                                                         <summary className="p-2 text-[11px] text-emerald-800 font-bold flex justify-between items-center cursor-pointer outline-none select-none">
@@ -1422,7 +1373,7 @@
                             </div>
                         )}
 
-                        {/* MENU INFERIOR (SCROLLABLE NO GESTOR) */}
+                        {/* MENU INFERIOR */}
                         {!showCadastro && !showCadastroFunc && veiculos.length > 0 && (
                             <div className="fixed md:absolute bottom-0 left-0 w-full bg-white border-t border-slate-200 px-1 py-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-50 overflow-x-auto hide-scroll flex gap-2">
                                 {userRole === 'GESTOR' ? (
@@ -1468,27 +1419,12 @@
                             </div>
                         )}
                     </div>
-                    
-                    <div id="pdf-content" style={{ display: 'none', width: '100%', backgroundColor: 'white', color: 'black', fontFamily: 'Arial', padding: '10px' }}>
-                        <div className="bg-slate-800 text-white rounded-lg p-2 mb-3 text-center">
-                            <h1 className="text-xl font-bold uppercase">{isGlobal ? 'Dossiê Consolidado RUBI FROTA' : 'Dossiê de Manutenção'}</h1>
-                        </div>
-                    </div>
                 </div>
             );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<ControleFrotaMulti />);
-    </script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./service-worker.js')
-                    .then(reg => console.log('✅ Service Worker registado!', reg))
-                    .catch(err => console.error('❌ Erro no Service Worker', err));
-            });
-        }
     </script>
 </body>
 </html>
