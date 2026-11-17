@@ -116,15 +116,38 @@
 
         const renderChartOrInsight = (dataObj, type, title, isForceTemporalChart = false, customOptions = {}) => {
             if(!dataObj || !dataObj.labels || dataObj.labels.length === 0) return null;
+            
+            // Dicionário de Inteligência de Negócio (BI) para cada gráfico
+            const descricoesGraficos = {
+                'Gastos por Categoria (Mês a Mês)': 'Mostra a evolução financeira dividida por tipo de despesa. \n💡 Ação: Identifique picos anormais de gastos (ex: muita manutenção num único mês) para investigar a fundo.',
+                'Aonde estamos gastando mais?': 'Revela a proporção total de cada tipo de despesa na frota. \n💡 Ação: Ataque sempre as fatias maiores primeiro ao desenhar estratégias para cortar custos.',
+                'Ticket Médio de cada Despesa': 'Mostra o custo médio pago por cada ocorrência (fatura/serviço). \n💡 Ação: Avalie se está a pagar cada vez mais caro pela mesma manutenção e faça cotações com novas oficinas.',
+                'Média de KM por Destino': 'Exibe a distância real percorrida em média para diferentes locais. \n💡 Ação: Audite e otimize rotas cujas distâncias médias estão a aumentar de forma injustificada.',
+                'Alocação por Centro de Custo': 'Distribui os custos operacionais pelos departamentos ou projetos da empresa. \n💡 Ação: Audite os setores que geram mais despesas para realizar o rateio/cobrança correta.',
+                'Top 10 Custos por Viatura': 'Lista os veículos "ralo de dinheiro" (os mais caros de manter). \n💡 Ação: Use esta lista para decidir que viaturas estão no fim de vida útil e devem ser vendidas/renovadas.',
+                'Top 5 Fornecedores (Negociação)': 'Mostra em que oficinas, postos ou empresas gasta a maior parte do orçamento. \n💡 Ação: Contacte estes fornecedores específicos e exija contratos corporativos com descontos de volume.',
+                'Evolução Mensal de Gastos (Cashburn)': 'Mede a "queima de caixa" total da frota ao longo dos meses. \n💡 Ação: Use esta linha de tendência para aprovar e prever o fluxo de caixa necessário para os próximos meses.',
+                'Evolução Mensal de Gastos': 'Mede a "queima de caixa" deste veículo específico. \n💡 Ação: Verifique a viabilidade da viatura cruzando o aumento do custo mensal com o lucro dos fretes.',
+                'Evolução de Produtividade (KM Rodado)': 'Mostra o grau de utilização (produção) da frota. \n💡 Ação: Cruze com a curva de gastos; se a frota rodou menos mas gastou mais dinheiro, há uma falha grave de eficiência.',
+                'Custo por KM (R$/KM)': 'O KPI máximo: divide o gasto financeiro total pelos quilómetros rodados. \n💡 Ação: Se a linha subir, o veículo está a dar prejuízo e a "comer" a margem de lucro líquido do frete.',
+                'Histórico de Consumo (KM por Litro)': 'Mede o rendimento de combustível a cada ida à bomba. \n💡 Ação: Quedas abruptas (barras mais baixas) indicam fraude/desvio de combustível, motor desgastado ou má condução.',
+                'Preço do Combustível Pago (R$/L)': 'Mostra a flutuação da inflação do preço nas bombas utilizadas. \n💡 Ação: Crie tetos de preço e oriente a equipa a proibir abastecimentos acima do preço de mercado local.'
+            };
+            
+            const desc = descricoesGraficos[title] || '';
+
             if (!isForceTemporalChart && dataObj.labels.length === 1) {
                 const singleValue = dataObj.datasets && dataObj.datasets[0] && dataObj.datasets[0].data ? dataObj.datasets[0].data[0] : 0;
                 return (
-                    <div className="bg-white p-6 rounded-2xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-100 flex flex-col justify-center items-center text-center h-full min-h-[300px] glass-card">
-                        <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center text-3xl mb-4">💡</div>
-                        <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">{title}</h3>
-                        <p className="text-xl font-black text-slate-800 leading-tight px-2">{dataObj.labels[0]}</p>
-                        <p className="text-2xl font-black text-blue-600 mt-2">{type === 'bar' && title.includes('KM') ? `${singleValue} km` : formatCurrency(singleValue)}</p>
-                        <span className="bg-slate-50 text-slate-400 text-[10px] px-3 py-1 rounded-full mt-5 uppercase font-bold border border-slate-200">Dado único isolado</span>
+                    <div className="bg-white p-6 rounded-2xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-100 flex flex-col justify-between items-center text-center h-full min-h-[300px] glass-card">
+                        <div className="flex-1 flex flex-col items-center justify-center">
+                            <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center text-3xl mb-4">💡</div>
+                            <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">{title}</h3>
+                            <p className="text-xl font-black text-slate-800 leading-tight px-2">{dataObj.labels[0]}</p>
+                            <p className="text-2xl font-black text-blue-600 mt-2">{type === 'bar' && title.includes('KM') ? `${singleValue} km` : formatCurrency(singleValue)}</p>
+                            <span className="bg-slate-50 text-slate-400 text-[10px] px-3 py-1 rounded-full mt-5 uppercase font-bold border border-slate-200">Dado único isolado</span>
+                        </div>
+                        {desc && <p className="text-[10px] text-slate-500 mt-4 pt-3 border-t border-slate-100 font-medium leading-relaxed text-left w-full whitespace-pre-wrap">{desc}</p>}
                     </div>
                 );
             }
@@ -132,10 +155,14 @@
             if (type === 'doughnut') defaultOptions = { plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, padding: 20, font: {family: 'Inter', size: 11} } } }, cutout: '70%' };
             if (type === 'line' || type === 'bar') defaultOptions.scales = { y: { beginAtZero: true, grid: { color: '#f1f5f9', drawBorder: false } }, x: { grid: { display: false, drawBorder: false } } };
             const mergedOptions = { ...defaultOptions, ...customOptions };
+            
             return (
                 <div className="bg-white p-6 rounded-2xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-100 flex flex-col justify-between glass-card min-h-[300px]">
-                    <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{title}</h3>
-                    <ChartWrapper type={type} data={dataObj} options={mergedOptions} />
+                    <div>
+                        <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{title}</h3>
+                        <ChartWrapper type={type} data={dataObj} options={mergedOptions} />
+                    </div>
+                    {desc && <p className="text-[10px] text-slate-500 mt-4 pt-3 border-t border-slate-100 font-medium leading-relaxed whitespace-pre-wrap">{desc}</p>}
                 </div>
             );
         };
