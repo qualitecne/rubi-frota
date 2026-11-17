@@ -538,7 +538,28 @@
                 if (data.filter(v => v > 0).length === 0) return null;
                 return { labels: meses, datasets: [{ label: 'Custo R$ / KM', data, borderColor: '#ef4444', backgroundColor: '#ef4444', tension: 0.3, fill: false }] };
             }, [despesasIniciais, rotasDashboard, veiculoAtivo, isGlobal]);
+const dataConsumo = useMemo(() => {
+                if(isGlobal) return null;
+                const abs = despesasIniciais.filter(d => d.categoria === 'Abastecimento' && String(d.descricao || '').includes('L a')).sort((a, b) => new Date(a.data || 0) - new Date(b.data || 0));
+                const labels = []; const data = [];
+                for(let i = 1; i < abs.length; i++) {
+                    const kmAtual = parseFloat(abs[i].km); const kmAnterior = parseFloat(abs[i-1].km);
+                    const match = String(abs[i].descricao || '').match(/\[(.*?)L a/); const litros = match ? parseFloat(match[1]) : 0;
+                    if(kmAtual > kmAnterior && litros > 0) {
+                        const kml = (kmAtual - kmAnterior) / litros;
+                        if(kml > 0 && kml < 30) { labels.push(abs[i].data ? String(abs[i].data).substring(5) : ''); data.push(kml.toFixed(2)); }
+                    }
+                }
+                if (labels.length === 0) return null;
+                return { labels, datasets: [{ label: 'KM por Litro', data, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', tension: 0.4, fill: true }] };
+            }, [despesasIniciais, isGlobal]);
 
+            const dataPrecoCombustivel = useMemo(() => {
+                if (isGlobal) return null;
+                const abs = despesasIniciais.filter(d => d.categoria === 'Abastecimento' && parseFloat(d.precoLitro) > 0).sort((a,b) => new Date(a.data || 0) - new Date(b.data || 0));
+                if (abs.length === 0) return null;
+                return { labels: abs.map(a => a.data ? String(a.data).substring(5) : ''), datasets: [{ label: 'R$ p/ Litro', data: abs.map(a => parseFloat(a.precoLitro).toFixed(2)), borderColor: '#f59e0b', backgroundColor: '#f59e0b', tension: 0.3, fill: false }] };
+            }, [despesasIniciais, isGlobal]);
             // ==========================================
             // NOVO: MOTOR DE SINCRONIZAÇÃO ANTI-CONFLITOS
             // ==========================================
