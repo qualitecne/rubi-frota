@@ -1209,20 +1209,77 @@ const dataConsumo = useMemo(() => {
                                     </div>
                                 )}
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
-                                    <KPICard icon="💰" title="Custo Operacional Total" value={formatCurrency(totalGasto)} colorClass="bg-blue-50 text-blue-600" />
-                                    {isGlobal ? (
-                                        <>
-                                            <KPICard icon="📈" title="Custo Médio / KM" value={`R$ ${custoKmGlobal}`} subtitle="Despesa Total ÷ KM Percorrido" colorClass="bg-emerald-50 text-emerald-600" />
-                                            <KPICard icon="🚘" title="Frota Ativa" value={veiculos.length} subtitle={`${rotasDashboard.filter(r=>r.status==='Pendente').length} viagens a decorrer`} colorClass="bg-indigo-50 text-indigo-600" />
-                                        </>
-                                    ) : (
-                                        <>
-                                            <KPICard icon="🛣️" title="Quilometragem" value={`${kmAtualNum.toLocaleString()} km`} subtitle={`Motorista: ${motoristaVeiculo}`} colorClass="bg-emerald-50 text-emerald-600" />
-                                            <KPICard icon="🔧" title="Intervenções" value={despesasIniciais.length} subtitle={`Centro Custo: ${ccVeiculo}`} colorClass="bg-amber-50 text-amber-600" />
-                                        </>
-                                    )}
-                                </div>
+                                {/* PAINEL SUPERIOR: 12 KPIs EXECUTIVOS */}
+                                {(() => {
+                                    // Cálculos Existentes
+                                    const faturamentoTotal = rotasDashboard.filter(r => r.status === 'Concluída').reduce((acc, curr) => acc + (parseFloat(curr.frete) || 0), 0);
+                                    const lucroReal = faturamentoTotal - totalGasto;
+                                    const viagensConcluidas = rotasDashboard.filter(r => r.status === 'Concluída').length;
+                                    const totalLitros = despesasIniciais.reduce((acc, d) => acc + (parseFloat(d.litros) || 0), 0);
+                                    const kmsTotais = rotasDashboard.filter(r => r.status === 'Concluída').reduce((a, b) => a + (Math.max(0, (parseFloat(b.kmFinal)||0) - (parseFloat(b.kmInicial)||0)) || 0), 0);
+                                    const consumoGeral = totalLitros > 0 ? (kmsTotais / totalLitros).toFixed(2) : '0.00';
+                                    const margem = faturamentoTotal > 0 ? ((lucroReal / faturamentoTotal) * 100).toFixed(1) : '0.0';
+
+                                    // Novos Cálculos (Combustível, Oficina, Alertas)
+                                    const custoCombustivel = despesasIniciais.filter(d => d.categoria === 'Abastecimento').reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0);
+                                    const precoMedioCombustivel = totalLitros > 0 ? (custoCombustivel / totalLitros).toFixed(2) : '0.00';
+                                    
+                                    const categoriasOficina = ['Mecânica / Manutenção', 'Troca de Óleo / Filtros', 'Pneus / Borracharia', 'Lavagem / Estética'];
+                                    const custoOficina = despesasIniciais.filter(d => categoriasOficina.includes(d.categoria)).reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0);
+                                    
+                                    let criticos = 0, atencao = 0;
+                                    const lembretesAvaliados = isGlobal ? lembretes : lembretes.filter(l => l.placa === veiculoAtivo);
+                                    lembretesAvaliados.forEach(l => {
+                                        const st = checkStatusLembrete(l);
+                                        if (st.critico) criticos++;
+                                        else if (st.icone === '⚠️' || st.icone === '📅') atencao++;
+                                    });
+                                    const totalAlertas = criticos + atencao;
+
+                                    return (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
+                                            {/* 1. Faturamento Bruto (Receita) */}
+                                            <KPICard icon="💰" title="Faturamento Bruto" value={formatCurrency(faturamentoTotal)} subtitle="Receita total dos fretes" colorClass="bg-green-50 text-green-600" />
+                                            
+                                            {/* 2. Custo Operacional */}
+                                            <KPICard icon="📉" title="Custo Operacional" value={formatCurrency(totalGasto)} subtitle="Queima de caixa do período" colorClass="bg-rose-50 text-rose-600" />
+                                            
+                                            {/* 3. Lucro Operacional (Líquido) */}
+                                            <KPICard icon="💵" title="Lucro Operacional" value={formatCurrency(lucroReal)} subtitle={faturamentoTotal > 0 ? `Margem de Lucro: ${margem}%` : 'Sem fretes faturados'} colorClass={lucroReal >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"} />
+
+                                            {/* 4. Produção Operacional (KM Total) */}
+                                            <KPICard icon="🛣️" title="Produção Operacional" value={`${kmsTotais.toLocaleString()} km`} subtitle="Distância total percorrida" colorClass="bg-slate-50 text-slate-700" />
+
+                                            {/* 5. Custo Médio / KM */}
+                                            <KPICard icon="📊" title="Custo Médio / KM" value={`R$ ${kmsTotais > 0 ? (totalGasto / kmsTotais).toFixed(2) : '0.00'}`} subtitle="Despesa ÷ Produção Operacional" colorClass="bg-slate-50 text-slate-600" />
+
+                                            {/* 6. Volume de Viagens */}
+                                            <KPICard icon="📦" title="Volume de Viagens" value={viagensConcluidas} subtitle="Rotas / Entregas finalizadas" colorClass="bg-violet-50 text-violet-600" />
+
+                                            {/* 7. Frota Ativa */}
+                                            {isGlobal ? (
+                                                <KPICard icon="🚘" title="Dimensão da Frota" value={veiculos.length} subtitle={`${rotasDashboard.filter(r=>r.status==='Pendente').length} viagens a decorrer`} colorClass="bg-indigo-50 text-indigo-600" />
+                                            ) : (
+                                                <KPICard icon="🚘" title="Quilometragem (Odom.)" value={`${kmAtualNum.toLocaleString()} km`} subtitle={`Motorista: ${motoristaVeiculo}`} colorClass="bg-indigo-50 text-indigo-600" />
+                                            )}
+
+                                            {/* 8. Painel de Risco (Alertas) */}
+                                            <KPICard icon={criticos > 0 ? "🚨" : (atencao > 0 ? "⚠️" : "✅")} title="Painel de Risco" value={totalAlertas} subtitle={totalAlertas > 0 ? `${criticos} Críticos | ${atencao} Atenção` : 'Frota 100% Regular'} colorClass={criticos > 0 ? "bg-red-50 text-red-600" : (atencao > 0 ? "bg-amber-50 text-amber-600" : "bg-slate-50 text-slate-400")} />
+
+                                            {/* 9. Consumo Médio Geral */}
+                                            <KPICard icon="⛽" title="Consumo Médio (KM/L)" value={`${consumoGeral} km/l`} subtitle={`Combustível Total: ${totalLitros.toFixed(0)} L`} colorClass="bg-blue-50 text-blue-600" />
+
+                                            {/* 10. Custo Exclusivo c/ Combustível */}
+                                            <KPICard icon="💳" title="Custo c/ Combustível" value={formatCurrency(custoCombustivel)} subtitle={totalGasto > 0 ? `Representa ${((custoCombustivel/totalGasto)*100).toFixed(1)}% dos gastos` : 'Sem abastecimentos'} colorClass="bg-cyan-50 text-cyan-600" />
+
+                                            {/* 11. Preço Médio de Compra */}
+                                            <KPICard icon="🏷️" title="Preço Médio de Compra" value={`R$ ${precoMedioCombustivel} / L`} subtitle="Média paga nas bombas" colorClass="bg-teal-50 text-teal-600" />
+
+                                            {/* 12. Custo de Oficina/Manutenção */}
+                                            <KPICard icon="🔧" title="Custo de Oficina (O.S.)" value={formatCurrency(custoOficina)} subtitle={totalGasto > 0 ? `Representa ${((custoOficina/totalGasto)*100).toFixed(1)}% dos gastos` : 'Sem manutenções'} colorClass="bg-orange-50 text-orange-600" />
+                                        </div>
+                                    );
+                                })()}
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
                                     {isGlobal && statsPrevCorr && <DualBar title="Distribuição de Manutenção (KPI Ouro)" label1="Preventiva" val1={statsPrevCorr.prev} color1="#10b981" label2="Corretiva" val2={statsPrevCorr.corr} color2="#ef4444" />}
