@@ -36,7 +36,7 @@
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7N4C1lZperjJZiDlk_SPDEl4OlfvuvbjdePeWKa-qr2ojbu4kmL862ntMjjcZNPrPQQ/exec';
 
         // =======================================================
-        // SISTEMA ANTI-CRASH (EVITA O ECRÃ BRANCO)
+        // SISTEMA ANTI-CRASH
         // =======================================================
         class ErrorBoundary extends React.Component {
             constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
@@ -141,7 +141,7 @@
         };
 
         // =======================================================
-        // APLICAÇÃO PRINCIPAL (APP)
+        // APLICAÇÃO PRINCIPAL
         // =======================================================
         function ControleFrotaMulti() {
             // 1. ESTADOS BÁSICOS
@@ -163,13 +163,16 @@
             const [editingDespesaIndex, setEditingDespesaIndex] = useState(null);
             const [isUploading, setIsUploading] = useState(false);
             
-            // Filtros de Pesquisa e Data
             const [searchTerm, setSearchTerm] = useState('');
             const [filtroCatEvolucao, setFiltroCatEvolucao] = useState('TODAS');
             const [filtroMes, setFiltroMes] = useState('TODOS');
 
+            // Formulários e Estados de Edição
             const [novoVeiculo, setNovoVeiculo] = useState({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
+            const [editingVeicPlaca, setEditingVeicPlaca] = useState(null);
+            
             const [novoFuncionario, setNovoFuncionario] = useState({ nome: '', cargo: 'Motorista' });
+            const [editingFuncNome, setEditingFuncNome] = useState(null);
 
             const defaultDespesa = { categoria: 'Mecânica / Manutenção', data: new Date().toISOString().split('T')[0], valor: '', valorMaoObra: '', valorPecas: '', situacao: 'Concluída', km: '', fornecedor: '', nf: '', descricao: '', pecas: '', litros: '', precoLitro: '', tipoOS: 'Corretiva', localOS: 'Externa', anexos: [], rotaVinculada: '' };
             const [novaDespesa, setNovaDespesa] = useState(defaultDespesa);
@@ -178,7 +181,7 @@
             const [execucaoRota, setExecucaoRota] = useState(null);
 
             // ==========================================
-            // EFEITOS E NUVEM (CORRIGIDO A ORDEM)
+            // EFEITOS E NUVEM
             // ==========================================
             const carregarDaNuvem = async () => {
                 setSyncStatus('A puxar dados...');
@@ -226,23 +229,18 @@
             const motoristaVeiculo = veiculoAtual ? veiculoAtual.motorista : 'N/I';
             const ccVeiculo = veiculoAtual ? veiculoAtual.centroCusto : 'N/I';
             
-            // Recolher todos os meses disponíveis para o menu suspenso
             const mesesDisponiveis = useMemo(() => {
                 const meses = new Set();
                 despesas.forEach(d => { if(d.data && typeof d.data === 'string' && d.data.includes('-')) meses.add(d.data.substring(0, 7)); });
                 return Array.from(meses).sort().reverse();
             }, [despesas]);
 
-            // Despesas globais da tela já filtradas pelo MÊS
             const despesasIniciais = useMemo(() => {
                 let d = isGlobal ? despesas.slice().reverse() : despesas.filter(x => x.placa === veiculoAtivo).reverse();
-                if (filtroMes !== 'TODOS') {
-                    d = d.filter(x => x.data && x.data.startsWith(filtroMes));
-                }
+                if (filtroMes !== 'TODOS') { d = d.filter(x => x.data && x.data.startsWith(filtroMes)); }
                 return d;
             }, [despesas, veiculoAtivo, isGlobal, filtroMes]);
             
-            // Rotas globais da tela já filtradas pelo MÊS
             const rotasDashboard = useMemo(() => {
                 let r = isGlobal ? rotas : rotas.filter(x => x.placa === veiculoAtivo);
                 if (filtroMes !== 'TODOS') {
@@ -252,13 +250,8 @@
                         const parteData = dataBruta.split(' ')[0];
                         if (parteData.includes('/')) {
                             const p = parteData.split('/');
-                            if (p.length === 3) {
-                                const ano = p[2].length === 2 ? `20${p[2]}` : p[2];
-                                return `${ano}-${p[1]}` === filtroMes;
-                            }
-                        } else if (parteData.includes('-')) {
-                            return parteData.startsWith(filtroMes);
-                        }
+                            if (p.length === 3) return `${p[2].length === 2 ? `20${p[2]}` : p[2]}-${p[1]}` === filtroMes;
+                        } else if (parteData.includes('-')) return parteData.startsWith(filtroMes);
                         return false;
                     });
                 }
@@ -272,6 +265,7 @@
                 const r = rotas.find(rt => String(rt.id) === String(rotaId));
                 return r ? (r.status === 'Pendente' ? `⏳ ${r.origem} ➔ ${r.destino}` : `${r.id} (${r.origem} ➔ ${r.destino})`) : `Rota ${rotaId}`;
             };
+
             const checkStatusLembrete = (lembrete) => {
                 const kmDoVeiculoAlvo = getKmAtual(lembrete.placa);
                 let status = { cor: 'bg-green-50 text-green-700', icone: '✅', msg: 'No Prazo', critico: false };
@@ -306,7 +300,6 @@
                 if (temAviso) return 'AVISO';
                 return 'OK';
             };
-
             // ==========================================
             // 3. CÁLCULOS DE BUSINESS INTELLIGENCE (BI)
             // ==========================================
@@ -407,12 +400,12 @@
             const statsDiasOperacao = useMemo(() => {
                 if (isGlobal) return null;
                 const diasRod = new Set();
-                rotasDashboard.filter(r => r.placa === veiculoAtivo && r.status === 'Concluída' && (r.dataInicial || r.data)).forEach(r => diasRod.add(String(r.dataInicial || r.data).split(' ')[0]));
+                rotasDashboard.filter(r => r.status === 'Concluída' && (r.dataInicial || r.data)).forEach(r => diasRod.add(String(r.dataInicial || r.data).split(' ')[0]));
                 const diasOfi = new Set();
                 despesasIniciais.filter(d => String(d.categoria).includes('Mecânica') && d.data).forEach(d => diasOfi.add(d.data));
                 if (diasRod.size === 0 && diasOfi.size === 0) return null;
                 return { rodando: diasRod.size, oficina: diasOfi.size };
-            }, [rotasDashboard, despesasIniciais, veiculoAtivo, isGlobal]);
+            }, [rotasDashboard, despesasIniciais, isGlobal]);
 
             const dataPorCategoria = useMemo(() => {
                 const map = {};
@@ -577,6 +570,9 @@
                 return { labels: meses, datasets: [{ label: 'Custo R$ / KM', data, borderColor: '#ef4444', backgroundColor: '#ef4444', tension: 0.3, fill: false }] };
             }, [despesasIniciais, rotasDashboard, veiculoAtivo, isGlobal]);
 
+            // ==========================================
+            // FUNÇÕES GERAIS E INTEGRAÇÃO DE NUVEM
+            // ==========================================
             const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) => {
                 setSyncStatus('A guardar...');
                 localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots, funcionarios: funcs }));
@@ -617,38 +613,86 @@
                 return veiculos;
             };
 
+            // ==========================================
+            // GESTÃO DE EQUIPA (CRIAR E EDITAR)
+            // ==========================================
             const handleAddFuncionario = () => {
                 if (!novoFuncionario.nome) return alert('O nome do colaborador é obrigatório!');
-                if (funcionarios.find(f => String(f.nome).toLowerCase() === String(novoFuncionario.nome).toLowerCase())) return alert('Membro já registado!');
-                const novosFuncs = [...funcionarios, novoFuncionario];
-                setFuncionarios(novosFuncs); salvarNaNuvem(veiculos, despesas, lembretes, rotas, novosFuncs); setNovoFuncionario({ nome: '', cargo: 'Motorista' });
+                let novosFuncs;
+                if (editingFuncNome) {
+                    if (novoFuncionario.nome.toLowerCase() !== editingFuncNome.toLowerCase() && funcionarios.find(f => String(f.nome).toLowerCase() === String(novoFuncionario.nome).toLowerCase())) {
+                        return alert('Já existe outro membro com este nome!');
+                    }
+                    novosFuncs = funcionarios.map(f => f.nome === editingFuncNome ? novoFuncionario : f);
+                    alert('✅ Membro atualizado com sucesso!');
+                } else {
+                    if (funcionarios.find(f => String(f.nome).toLowerCase() === String(novoFuncionario.nome).toLowerCase())) return alert('Membro já registado!');
+                    novosFuncs = [...funcionarios, novoFuncionario];
+                    alert('✅ Membro adicionado à equipa!');
+                }
+                setFuncionarios(novosFuncs); 
+                salvarNaNuvem(veiculos, despesas, lembretes, rotas, novosFuncs); 
+                setNovoFuncionario({ nome: '', cargo: 'Motorista' });
+                setEditingFuncNome(null);
+            };
+
+            const editarFuncionario = (func) => {
+                setNovoFuncionario(func);
+                setEditingFuncNome(func.nome);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
             const removerFuncionario = (nome) => {
                 if(confirm(`Deseja remover ${nome} da equipa?`)) {
                     const novosFuncs = funcionarios.filter(f => f.nome !== nome);
                     setFuncionarios(novosFuncs); salvarNaNuvem(veiculos, despesas, lembretes, rotas, novosFuncs);
+                    if (editingFuncNome === nome) { setNovoFuncionario({ nome: '', cargo: 'Motorista' }); setEditingFuncNome(null); }
                 }
             };
 
+            // ==========================================
+            // GESTÃO DE VEÍCULOS (CRIAR E EDITAR)
+            // ==========================================
             const handleAddVeiculo = () => {
                 if (!novoVeiculo.veiculo || !novoVeiculo.placa) return alert('Veículo e Matrícula/Placa são obrigatórios!');
                 const placaUpper = novoVeiculo.placa.toUpperCase();
-                if (veiculos.find(v => v.placa === placaUpper)) return alert('Matrícula já registada!');
-                const novosVeiculos = [...veiculos, { ...novoVeiculo, placa: placaUpper }];
-                setVeiculos(novosVeiculos); salvarNaNuvem(novosVeiculos, despesas, lembretes, rotas);
-                setVeiculoAtivo(placaUpper); setNovoVeiculo({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
-                setShowCadastro(false); setView('dashboard');
+                let novosVeiculos;
+                if (editingVeicPlaca) {
+                    if (placaUpper !== editingVeicPlaca && veiculos.find(v => v.placa === placaUpper)) {
+                        return alert('Já existe outra viatura registada com esta matrícula!');
+                    }
+                    novosVeiculos = veiculos.map(v => v.placa === editingVeicPlaca ? { ...novoVeiculo, placa: placaUpper } : v);
+                    alert('✅ Viatura atualizada com sucesso!');
+                } else {
+                    if (veiculos.find(v => v.placa === placaUpper)) return alert('Matrícula já registada!');
+                    novosVeiculos = [...veiculos, { ...novoVeiculo, placa: placaUpper }];
+                    alert('✅ Nova viatura registada!');
+                }
+                setVeiculos(novosVeiculos); 
+                salvarNaNuvem(novosVeiculos, despesas, lembretes, rotas);
+                setNovoVeiculo({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
+                setEditingVeicPlaca(null);
             };
 
-            const removerVeiculo = () => {
-                if(confirm("ATENÇÃO: Deseja excluir esta viatura permanentemente?")) {
-                    const novosVeiculos = veiculos.filter(v => v.placa !== veiculoAtivo);
-                    setVeiculos(novosVeiculos); salvarNaNuvem(novosVeiculos, despesas, lembretes, rotas);
-                    setVeiculoAtivo('TODOS'); setView('dashboard');
+            const editarVeiculo = (veic) => {
+                setNovoVeiculo(veic);
+                setEditingVeicPlaca(veic.placa);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            const removerVeiculo = (placa) => {
+                if(confirm(`ATENÇÃO: Deseja excluir a viatura ${placa} permanentemente?`)) {
+                    const novosVeiculos = veiculos.filter(v => v.placa !== placa);
+                    setVeiculos(novosVeiculos); 
+                    salvarNaNuvem(novosVeiculos, despesas, lembretes, rotas);
+                    if (veiculoAtivo === placa) setVeiculoAtivo('TODOS');
+                    if (editingVeicPlaca === placa) { setNovoVeiculo({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' }); setEditingVeicPlaca(null); }
                 }
             };
 
+            // ==========================================
+            // RESTANTES FORMULÁRIOS
+            // ==========================================
             const handleSalvarRascunhoDespesa = () => { localStorage.setItem('rubi_frota_rascunho_despesa', JSON.stringify({ view: view, veiculo: veiculoAtivo, despesa: novaDespesa })); alert('💾 Rascunho salvo com sucesso!'); };
 
             const handleAddDespesa = () => {
@@ -929,8 +973,8 @@
                                         <button onClick={() => {setView('os'); setShowCadastro(false); setShowCadastroFunc(false);}} className={`text-left p-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-colors ${view === 'os' && !showCadastro && !showCadastroFunc ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><span>🔧</span> Registar O.S.</button>
                                         
                                         <div className="h-px bg-slate-800 my-2"></div>
-                                        <button onClick={() => {setShowCadastro(!showCadastro); setShowCadastroFunc(false);}} className={`text-left p-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-colors ${showCadastro ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><span>🚘</span> {showCadastro ? 'Cancelar Novo Veículo' : 'Gerir Veículos'}</button>
-                                        <button onClick={() => {setShowCadastroFunc(!showCadastroFunc); setShowCadastro(false);}} className={`text-left p-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-colors ${showCadastroFunc ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><span>👥</span> {showCadastroFunc ? 'Cancelar Nova Equipa' : 'Gerir Equipa'}</button>
+                                        <button onClick={() => {setShowCadastro(!showCadastro); setShowCadastroFunc(false); setEditingVeicPlaca(null);}} className={`text-left p-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-colors ${showCadastro ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><span>🚘</span> {showCadastro ? 'Fechar Área de Veículos' : 'Gerir Veículos'}</button>
+                                        <button onClick={() => {setShowCadastroFunc(!showCadastroFunc); setShowCadastro(false); setEditingFuncNome(null);}} className={`text-left p-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-colors ${showCadastroFunc ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><span>👥</span> {showCadastroFunc ? 'Fechar Área da Equipa' : 'Gerir Equipa'}</button>
                                         <button onClick={() => {setView('lembretes'); setShowCadastro(false); setShowCadastroFunc(false);}} className={`text-left p-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-colors ${view === 'lembretes' && !showCadastro && !showCadastroFunc ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><span>🔔</span> Alertas / Risco</button>
                                     </>
                                 ) : (
@@ -980,23 +1024,31 @@
 
                         {showCadastroFunc && userRole === 'GESTOR' && (
                             <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200 animate-fade-in max-w-2xl mx-auto">
-                                <h2 className="font-black text-2xl text-slate-800 mb-1">👥 Registar Membro da Equipa</h2>
+                                <div className="flex justify-between items-center mb-1">
+                                    <h2 className="font-black text-2xl text-slate-800">👥 {editingFuncNome ? 'Editar Membro da Equipa' : 'Registar Membro da Equipa'}</h2>
+                                    {editingFuncNome && <button onClick={() => { setEditingFuncNome(null); setNovoFuncionario({ nome: '', cargo: 'Motorista' }); }} className="text-xs bg-slate-200 text-slate-700 hover:bg-slate-300 px-3 py-1.5 rounded-lg font-bold transition">Cancelar</button>}
+                                </div>
                                 <p className="text-sm text-slate-500 mb-6 font-medium">As pessoas registadas aqui aparecerão nas listas suspensas (dropdowns) de motoristas e ajudantes.</p>
                                 <div className="space-y-3">
                                     <input className="w-full border border-slate-300 p-4 rounded-xl outline-none focus:border-blue-500 transition" placeholder="Nome Completo do Colaborador" value={novoFuncionario.nome} onChange={e => setNovoFuncionario({...novoFuncionario, nome: e.target.value})} />
                                     <select className="w-full border border-slate-300 p-4 rounded-xl outline-none bg-white font-bold text-slate-700 focus:border-blue-500 transition" value={novoFuncionario.cargo} onChange={e => setNovoFuncionario({...novoFuncionario, cargo: e.target.value})}>
                                         <option value="Motorista">Apenas Motorista</option><option value="Ajudante">Apenas Ajudante</option><option value="Ambos">Motorista & Ajudante</option>
                                     </select>
-                                    <button onClick={handleAddFuncionario} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold p-4 rounded-xl shadow-lg transition">Guardar Colaborador</button>
+                                    <button onClick={handleAddFuncionario} className={`w-full text-white font-bold p-4 rounded-xl shadow-lg transition ${editingFuncNome ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+                                        {editingFuncNome ? 'Atualizar Colaborador' : 'Guardar Colaborador'}
+                                    </button>
                                 </div>
                                 <div className="mt-10">
                                     <h3 className="font-black text-slate-800 text-lg mb-4 border-b pb-2">Equipa Atual ({funcionarios.length})</h3>
                                     {funcionarios.length === 0 ? <p className="text-sm text-slate-400">Ninguém registado ainda.</p> : (
                                         <div className="space-y-3">
                                             {funcionarios.map(f => (
-                                                <div key={f.nome} className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-200 hover:border-blue-300 transition">
+                                                <div key={f.nome} className={`flex justify-between items-center bg-slate-50 p-4 rounded-xl border transition ${editingFuncNome === f.nome ? 'border-amber-400 shadow-md' : 'border-slate-200 hover:border-blue-300'}`}>
                                                     <div><p className="font-bold text-slate-800">{f.nome}</p><p className="text-[11px] uppercase font-bold text-slate-500">{f.cargo}</p></div>
-                                                    <button onClick={() => removerFuncionario(f.nome)} className="text-red-500 text-xs font-bold underline px-3 py-1 hover:bg-red-50 rounded">Excluir</button>
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => editarFuncionario(f)} className="text-amber-600 bg-amber-50 text-xs font-bold px-3 py-1.5 hover:bg-amber-100 rounded-lg border border-amber-200">Editar</button>
+                                                        <button onClick={() => removerFuncionario(f.nome)} className="text-red-500 bg-red-50 text-xs font-bold px-3 py-1.5 hover:bg-red-100 rounded-lg border border-red-200">Excluir</button>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
@@ -1007,7 +1059,10 @@
 
                         {showCadastro && userRole === 'GESTOR' && (
                             <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200 animate-fade-in max-w-2xl mx-auto">
-                                <h2 className="font-black text-2xl text-slate-800 mb-6">Registar Novo Veículo</h2>
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="font-black text-2xl text-slate-800">{editingVeicPlaca ? 'Editar Veículo' : 'Registar Novo Veículo'}</h2>
+                                    {editingVeicPlaca && <button onClick={() => { setEditingVeicPlaca(null); setNovoVeiculo({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' }); }} className="text-xs bg-slate-200 text-slate-700 hover:bg-slate-300 px-3 py-1.5 rounded-lg font-bold transition">Cancelar</button>}
+                                </div>
                                 <div className="space-y-3">
                                     <input className="w-full border border-slate-300 p-4 rounded-xl outline-none focus:border-blue-500" placeholder="Marca / Modelo" value={novoVeiculo.veiculo} onChange={e => setNovoVeiculo({...novoVeiculo, veiculo: e.target.value})} />
                                     <input className="w-full border border-slate-300 p-4 rounded-xl outline-none uppercase focus:border-blue-500" placeholder="Matrícula / Placa" value={novoVeiculo.placa} onChange={e => setNovoVeiculo({...novoVeiculo, placa: e.target.value})} />
@@ -1019,7 +1074,31 @@
                                         </select>
                                         <input className="w-full border border-slate-300 p-4 rounded-xl outline-none text-sm focus:border-blue-500" placeholder="Centro de Custo" value={novoVeiculo.centroCusto} onChange={e => setNovoVeiculo({...novoVeiculo, centroCusto: e.target.value})} />
                                     </div>
-                                    <button onClick={handleAddVeiculo} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold p-4 rounded-xl shadow-lg mt-4 transition">Salvar Viatura no Sistema</button>
+                                    <button onClick={handleAddVeiculo} className={`w-full text-white font-bold p-4 rounded-xl shadow-lg mt-4 transition ${editingVeicPlaca ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                        {editingVeicPlaca ? 'Atualizar Viatura' : 'Salvar Viatura no Sistema'}
+                                    </button>
+                                </div>
+                                <div className="mt-10">
+                                    <h3 className="font-black text-slate-800 text-lg mb-4 border-b pb-2">Frota Atual Registada ({veiculos.length})</h3>
+                                    {veiculos.length === 0 ? <p className="text-sm text-slate-400">Nenhum veículo registado ainda.</p> : (
+                                        <div className="space-y-3">
+                                            {veiculos.map(v => (
+                                                <div key={v.placa} className={`flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-slate-50 p-4 rounded-xl border transition ${editingVeicPlaca === v.placa ? 'border-amber-400 shadow-md' : 'border-slate-200 hover:border-blue-300'}`}>
+                                                    <div>
+                                                        <p className="font-bold text-slate-800 text-base">{v.veiculo}</p>
+                                                        <div className="flex gap-2 items-center mt-1">
+                                                            <span className="bg-slate-800 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-wider">{v.placa}</span>
+                                                            <span className="text-[11px] text-slate-500 font-bold">{v.kmAtual} KM</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-2 w-full sm:w-auto justify-end border-t border-slate-200 sm:border-0 pt-2 sm:pt-0">
+                                                        <button onClick={() => editarVeiculo(v)} className="text-amber-600 bg-amber-50 text-xs font-bold px-3 py-1.5 hover:bg-amber-100 rounded-lg border border-amber-200">Editar</button>
+                                                        <button onClick={() => removerVeiculo(v.placa)} className="text-red-500 bg-red-50 text-xs font-bold px-3 py-1.5 hover:bg-red-100 rounded-lg border border-red-200">Excluir</button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -1118,10 +1197,7 @@
                                     )}
                                 </div>
 
-                                {/* ROW 3: GRÁFICOS (GRID) */}
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                                    
-                                    {/* NOVO GRÁFICO INTERATIVO COM LISTA SUSPENSA */}
                                     {dataEvolucaoCategoriaMensal && (
                                         <div className="bg-white p-6 rounded-2xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-100 flex flex-col justify-between glass-card min-h-[300px]">
                                             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-2">
@@ -1356,7 +1432,6 @@
                                                                     </div>
                                                                 )}
                                                                 
-                                                                {/* RESUMO FINANCEIRO E LUCRO DA ROTA */}
                                                                 {userRole === 'GESTOR' && (despesasDaRota.length > 0 || valorFrete > 0) && (
                                                                     <details className="bg-emerald-50 rounded-xl border border-emerald-200 mb-4 shadow-sm group/financeiro">
                                                                         <summary className="p-3 text-xs text-emerald-800 font-bold flex justify-between items-center cursor-pointer outline-none select-none">
