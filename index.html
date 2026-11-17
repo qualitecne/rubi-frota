@@ -685,7 +685,21 @@
                     setRotas(novasRotas); salvarNaNuvem(veiculos, despesas, lembretes, novasRotas);
                 }
             };
-
+const generatePDF = () => {
+                setIsGenerating(true);
+                const mainUi = document.getElementById('main-ui');
+                const pdfContent = document.getElementById('pdf-content');
+                mainUi.style.display = 'none';
+                pdfContent.style.display = 'block';
+                window.scrollTo(0, 0);
+                const filename = isGlobal ? `Relatorio_RUBI_FROTA_Global.pdf` : `Dossie_${veiculoAtual ? veiculoAtual.placa : 'Veiculo'}.pdf`;
+                const opt = { margin: [5, 5, 10, 5], filename: filename, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
+                window.html2pdf().set(opt).from(pdfContent).save().then(() => {
+                    mainUi.style.display = 'block';
+                    pdfContent.style.display = 'none';
+                    setIsGenerating(false);
+                }).catch(() => setIsGenerating(false));
+            };
             const renderSelectRota = () => (
                 <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl mt-3">
                     <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-2">🛣️ Vincular a uma Viagem (Opcional)</label>
