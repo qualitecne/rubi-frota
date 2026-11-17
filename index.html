@@ -166,7 +166,7 @@
             // Filtros de Pesquisa e Data
             const [searchTerm, setSearchTerm] = useState('');
             const [filtroCatEvolucao, setFiltroCatEvolucao] = useState('TODAS');
-            const [filtroMes, setFiltroMes] = useState('TODOS'); // NOVO: Mês para filtrar todo o Dashboard
+            const [filtroMes, setFiltroMes] = useState('TODOS');
 
             const [novoVeiculo, setNovoVeiculo] = useState({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
             const [novoFuncionario, setNovoFuncionario] = useState({ nome: '', cargo: 'Motorista' });
@@ -177,7 +177,49 @@
             const [novaRotaGestor, setNovaRotaGestor] = useState({ origem: '', destino: '', observacoes: '' });
             const [execucaoRota, setExecucaoRota] = useState(null);
 
-            // 2. VARIÁVEIS BASE PARA FILTRAGEM (SEM OPTIONAL CHAINING "?.")
+            // ==========================================
+            // EFEITOS E NUVEM (CORRIGIDO A ORDEM)
+            // ==========================================
+            const carregarDaNuvem = async () => {
+                setSyncStatus('A puxar dados...');
+                try {
+                    const response = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'carregar' }) });
+                    const result = await response.json();
+                    if (result.status === 'sucesso') {
+                        setVeiculos(result.dados.veiculos || []); setDespesas(result.dados.despesas || []); setLembretes(result.dados.lembretes || []);
+                        setRotas(result.dados.rotas || []); setFuncionarios(result.dados.funcionarios || []);
+                        setSyncStatus('Sincronizado'); localStorage.setItem('rubi_frota_db', JSON.stringify(result.dados));
+                    }
+                } catch (error) {
+                    setSyncStatus('Modo Offline');
+                    const saved = localStorage.getItem('rubi_frota_db');
+                    if (saved) {
+                        try {
+                            const parsed = JSON.parse(saved);
+                            setVeiculos(Array.isArray(parsed.veiculos) ? parsed.veiculos : []); setDespesas(Array.isArray(parsed.despesas) ? parsed.despesas : []);
+                            setLembretes(Array.isArray(parsed.lembretes) ? parsed.lembretes : []); setRotas(Array.isArray(parsed.rotas) ? parsed.rotas : []);
+                            setFuncionarios(Array.isArray(parsed.funcionarios) ? parsed.funcionarios : []);
+                        } catch(e){}
+                    }
+                }
+            };
+
+            useEffect(() => {
+                const savedRole = localStorage.getItem('rubi_frota_role');
+                if (savedRole) { setUserRole(savedRole); if (savedRole === 'OPERACIONAL') setView('rotas'); }
+                carregarDaNuvem();
+            }, []);
+
+            useEffect(() => {
+                if ((view === 'os' || view === 'abastecimento' || view === 'despesaGeral') && editingDespesaIndex === null && veiculoAtivo !== 'TODOS') {
+                    const rascunhoStr = localStorage.getItem('rubi_frota_rascunho_despesa');
+                    if (rascunhoStr) {
+                        try { const parsed = JSON.parse(rascunhoStr); if (parsed.view === view && parsed.veiculo === veiculoAtivo) setNovaDespesa(parsed.despesa); } catch(e){}
+                    }
+                }
+            }, [view, veiculoAtivo, editingDespesaIndex]);
+
+            // 2. VARIÁVEIS BASE PARA FILTRAGEM
             const isGlobal = veiculoAtivo === 'TODOS';
             const veiculoAtual = isGlobal ? null : veiculos.find(v => v.placa === veiculoAtivo);
             const kmAtualNum = veiculoAtual ? parseFloat(veiculoAtual.kmAtual) || 0 : 0;
@@ -230,7 +272,6 @@
                 const r = rotas.find(rt => String(rt.id) === String(rotaId));
                 return r ? (r.status === 'Pendente' ? `⏳ ${r.origem} ➔ ${r.destino}` : `${r.id} (${r.origem} ➔ ${r.destino})`) : `Rota ${rotaId}`;
             };
-
             const checkStatusLembrete = (lembrete) => {
                 const kmDoVeiculoAlvo = getKmAtual(lembrete.placa);
                 let status = { cor: 'bg-green-50 text-green-700', icone: '✅', msg: 'No Prazo', critico: false };
@@ -255,8 +296,7 @@
             const checkSaudeVeiculo = (placa) => {
                 const lembretesDoVeiculo = lembretes.filter(l => l.placa === placa);
                 if (lembretesDoVeiculo.length === 0) return 'OK';
-                let temCritico = false;
-                let temAviso = false;
+                let temCritico = false; let temAviso = false;
                 lembretesDoVeiculo.forEach(l => {
                     const st = checkStatusLembrete(l);
                     if (st.critico) temCritico = true;
@@ -348,7 +388,7 @@
                 if (!isGlobal) return [];
                 const limite = new Date(); limite.setDate(limite.getDate() - 30);
                 const veiculosComRota = new Set();
-                rotas.filter(r => r.status === 'Concluída' && (r.dataInicial || r.data)).forEach(r => {
+                rotasDashboard.filter(r => r.status === 'Concluída' && (r.dataInicial || r.data)).forEach(r => {
                     const dataBruta = String(r.dataInicial || r.data || "").split(' ')[0];
                     if (dataBruta.includes('/')) {
                         const p = dataBruta.split('/');
@@ -362,17 +402,17 @@
                     }
                 });
                 return veiculos.filter(v => !veiculosComRota.has(v.placa));
-            }, [veiculos, rotas, isGlobal]);
+            }, [veiculos, rotasDashboard, isGlobal]);
 
             const statsDiasOperacao = useMemo(() => {
                 if (isGlobal) return null;
                 const diasRod = new Set();
-                rotasDashboard.filter(r => r.status === 'Concluída' && (r.dataInicial || r.data)).forEach(r => diasRod.add(String(r.dataInicial || r.data).split(' ')[0]));
+                rotasDashboard.filter(r => r.placa === veiculoAtivo && r.status === 'Concluída' && (r.dataInicial || r.data)).forEach(r => diasRod.add(String(r.dataInicial || r.data).split(' ')[0]));
                 const diasOfi = new Set();
                 despesasIniciais.filter(d => String(d.categoria).includes('Mecânica') && d.data).forEach(d => diasOfi.add(d.data));
                 if (diasRod.size === 0 && diasOfi.size === 0) return null;
                 return { rodando: diasRod.size, oficina: diasOfi.size };
-            }, [rotasDashboard, despesasIniciais, isGlobal]);
+            }, [rotasDashboard, despesasIniciais, veiculoAtivo, isGlobal]);
 
             const dataPorCategoria = useMemo(() => {
                 const map = {};
@@ -536,7 +576,8 @@
                 if (data.filter(v => v > 0).length === 0) return null;
                 return { labels: meses, datasets: [{ label: 'Custo R$ / KM', data, borderColor: '#ef4444', backgroundColor: '#ef4444', tension: 0.3, fill: false }] };
             }, [despesasIniciais, rotasDashboard, veiculoAtivo, isGlobal]);
-const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) => {
+
+            const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) => {
                 setSyncStatus('A guardar...');
                 localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots, funcionarios: funcs }));
                 try {
@@ -1315,6 +1356,7 @@ const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) =>
                                                                     </div>
                                                                 )}
                                                                 
+                                                                {/* RESUMO FINANCEIRO E LUCRO DA ROTA */}
                                                                 {userRole === 'GESTOR' && (despesasDaRota.length > 0 || valorFrete > 0) && (
                                                                     <details className="bg-emerald-50 rounded-xl border border-emerald-200 mb-4 shadow-sm group/financeiro">
                                                                         <summary className="p-3 text-xs text-emerald-800 font-bold flex justify-between items-center cursor-pointer outline-none select-none">
@@ -1655,8 +1697,8 @@ const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) =>
 
                                 {/* MÓDULO: HISTÓRICO FINANCEIRO / CAIXA (GESTOR) */}
                                 {view === 'historico' && userRole === 'GESTOR' && (
-                                    <div className="animate-fade-in space-y-6 max-w-5xl mx-auto">
-                                        <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-4">
+                                    <div className="animate-fade-in space-y-6 max-w-5xl mx-auto" id="pdf-content">
+                                        <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-4" data-html2canvas-ignore>
                                             <div>
                                                 <h2 className="text-2xl font-black text-slate-800">🧾 Histórico Geral (Caixa)</h2>
                                                 <p className="text-sm text-slate-500 mt-1">Todos os registos de despesas, postos e serviços.</p>
@@ -1666,7 +1708,7 @@ const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) =>
                                             </button>
                                         </div>
 
-                                        <div className="relative bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
+                                        <div className="relative bg-white p-2 rounded-2xl shadow-sm border border-slate-200" data-html2canvas-ignore>
                                             <span className="absolute left-6 top-5 text-slate-400 text-lg">🔍</span>
                                             <input type="text" className="w-full bg-transparent py-3 pl-12 pr-4 text-sm font-bold outline-none text-slate-700" placeholder="Pesquisar por categoria, posto, descrição, Rota (RT...)" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                                         </div>
@@ -1700,7 +1742,7 @@ const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) =>
                                                                     </div>
                                                                     <div className="flex items-center gap-4">
                                                                         <span className="font-bold text-emerald-400">{formatCurrency(totalCategoria)}</span>
-                                                                        <span className="text-slate-400 group-open/cat:rotate-180 transition-transform">▼</span>
+                                                                        <span className="text-slate-400 group-open/cat:rotate-180 transition-transform" data-html2canvas-ignore>▼</span>
                                                                     </div>
                                                                 </summary>
                                                                 
@@ -1720,7 +1762,7 @@ const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) =>
                                                                                 </div>
                                                                                 <div className="flex items-center gap-3 md:gap-4">
                                                                                     <span className="text-base md:text-lg font-black text-slate-800">{formatCurrency(d.valor)}</span>
-                                                                                    <span className="text-slate-400 group-open/item:rotate-180 transition-transform text-xs">▼</span>
+                                                                                    <span className="text-slate-400 group-open/item:rotate-180 transition-transform text-xs" data-html2canvas-ignore>▼</span>
                                                                                 </div>
                                                                             </summary>
 
@@ -1740,7 +1782,7 @@ const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) =>
                                                                                         )}
                                                                                     </div>
                                                                                     
-                                                                                    <div className="flex flex-col md:flex-row md:justify-between md:items-center pt-4 border-t border-slate-200 gap-4">
+                                                                                    <div className="flex flex-col md:flex-row md:justify-between md:items-center pt-4 border-t border-slate-200 gap-4" data-html2canvas-ignore>
                                                                                         {d.anexos && Array.isArray(d.anexos) && d.anexos.length > 0 ? (
                                                                                             <div className="flex flex-wrap gap-2">
                                                                                                 {d.anexos.map((url, idx) => (<a key={idx} href={url} target="_blank" rel="noreferrer" className="text-blue-700 font-bold bg-blue-50 hover:bg-blue-100 transition px-3 py-1.5 rounded-lg border border-blue-200 text-[10px] flex items-center gap-1"><span>🔗</span> Anexo {idx+1}</a>))}
@@ -1837,4 +1879,3 @@ const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) =>
     </script>
 </body>
 </html>
-        
