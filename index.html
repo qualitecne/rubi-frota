@@ -287,7 +287,7 @@
                 return r;
             }, [rotas, veiculoAtivo, isGlobal, filtroMes]);
 
-            const rotasParaVincular = useMemo(() => isGlobal ? [] : rotas.filter(r => r.placa === veiculoAtivo).reverse().slice(0, 20), [rotas, veiculoAtivo, isGlobal]);
+            const rotasParaVincular = useMemo(() => isGlobal ? (novaDespesa.placa ? rotas.filter(r => r.placa === novaDespesa.placa).reverse().slice(0, 20) : []) : rotas.filter(r => r.placa === veiculoAtivo).reverse().slice(0, 20), [rotas, veiculoAtivo, isGlobal, novaDespesa.placa]);
 
             const getKmAtual = (placa) => { const v = veiculos.find(ve => ve.placa === placa); return v ? parseFloat(v.kmAtual) || 0 : 0; };
             const getNomeRota = (rotaId) => {
@@ -740,7 +740,7 @@ const dataConsumo = useMemo(() => {
             const handleSalvarRascunhoDespesa = () => { localStorage.setItem('rubi_frota_rascunho_despesa', JSON.stringify({ view: view, veiculo: veiculoAtivo, despesa: novaDespesa })); alert('💾 Rascunho salvo com sucesso!'); };
 
             const handleAddDespesa = () => {
-                if (isGlobal) return alert('Selecione uma viatura específica.');
+                if (isGlobal && !novaDespesa.placa) return alert('Selecione a viatura para este registo no topo do formulário.');
                 let valorFinal = novaDespesa.valor; let descricaoFinal = novaDespesa.descricao;
                 if (view === 'abastecimento' && novaDespesa.litros && novaDespesa.precoLitro) { 
                     const resumo = `[${novaDespesa.litros}L a R$${novaDespesa.precoLitro}/L]`; descricaoFinal = descricaoFinal ? `${resumo} ${descricaoFinal}` : resumo; 
@@ -751,10 +751,12 @@ const dataConsumo = useMemo(() => {
                 }
                 if (!novaDespesa.data) return setFormError('A data é obrigatória.');
                 setFormError('');
+                
+                const placaAlvo = isGlobal ? novaDespesa.placa : veiculoAtivo;
                 let novosVeiculos = veiculos;
-                if (novaDespesa.km) { novosVeiculos = atualizarKmVeiculo(novaDespesa.km, veiculoAtivo); setVeiculos(novosVeiculos); }
+                if (novaDespesa.km) { novosVeiculos = atualizarKmVeiculo(novaDespesa.km, placaAlvo); setVeiculos(novosVeiculos); }
 
-                const registoPronto = { ...novaDespesa, valor: valorFinal, descricao: descricaoFinal, placa: veiculoAtivo };
+                const registoPronto = { ...novaDespesa, valor: valorFinal, descricao: descricaoFinal, placa: placaAlvo };
                 let novasDespesas = [...despesas];
                 
                 if (editingDespesaIndex !== null) { novasDespesas[editingDespesaIndex] = registoPronto; alert('✅ Registo atualizado!'); } 
@@ -911,20 +913,18 @@ const dataConsumo = useMemo(() => {
                 }).catch(() => setIsGenerating(false));
             };
 
-            const renderSelectRota = () => (
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl mt-3">
-                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-2">🛣️ Vincular a uma Viagem (Opcional)</label>
-                    <select className="w-full border border-slate-300 p-2 rounded-lg text-sm bg-white outline-none focus:border-blue-500" value={novaDespesa.rotaVinculada || ''} onChange={e => setNovaDespesa({...novaDespesa, rotaVinculada: e.target.value})}>
-                        <option value="">-- Sem vínculo específico --</option>
-                        {rotasParaVincular.map(r => (
-                            <option key={r.id} value={r.id}>
-                                {r.status === 'Pendente' ? '⏳' : '✅'} {r.status === 'Pendente' ? '(Pendente)' : `[${r.id}]`} {r.origem} ➔ {r.destino}
-                            </option>
-                        ))}
-                    </select>
-                    <p className="text-[10px] text-slate-400 mt-1">Ligue esta despesa a uma viagem para calcular o lucro total do frete.</p>
-                </div>
-            );
+           const renderSeletorVeiculoGlobal = () => {
+                if (!isGlobal) return null;
+                return (
+                    <div className="mb-6 bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-700">
+                        <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wide block mb-2">🚘 Viatura a Receber o Registo</label>
+                        <select className="w-full border-0 p-3 rounded-lg text-sm font-bold text-slate-800 bg-white outline-none focus:ring-2 focus:ring-blue-500 shadow-inner cursor-pointer" value={novaDespesa.placa || ''} onChange={e => setNovaDespesa({...novaDespesa, placa: e.target.value, rotaVinculada: ''})}>
+                            <option value="" disabled>-- Clique para Escolher a Viatura --</option>
+                            {veiculos.map(v => <option key={v.placa} value={v.placa}>{v.placa} - {v.veiculo}</option>)}
+                        </select>
+                    </div>
+                );
+            };
 
             // Preparação dos Filtros Visuais de Tabelas
             const despesasFiltradas = despesasIniciais.filter(d => 
@@ -1059,7 +1059,7 @@ const dataConsumo = useMemo(() => {
                                 )}
                             </div>
                         )}
-                        {!showCadastro && !showCadastroFunc && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'os' || view === 'abastecimento' || view === 'lembretes' || view === 'despesaGeral') && (
+                        {!showCadastro && !showCadastroFunc && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'lembretes') && (
                             <div className="bg-white p-10 text-center text-slate-500 rounded-3xl shadow-sm border border-slate-200 mt-10 max-w-2xl mx-auto">
                                 <span className="text-5xl block mb-4 opacity-50">🔒</span>
                                 <h2 className="font-bold text-xl text-slate-700 mb-2">Ação Não Permitida na Visão Global</h2>
@@ -1380,7 +1380,7 @@ const dataConsumo = useMemo(() => {
                             </div>
                         )}
 
-                        {!showCadastro && !showCadastroFunc && veiculos.length > 0 && view !== 'dashboard' && (!isGlobal || view === 'historico' || view === 'rotas') && (
+                        {!showCadastro && !showCadastroFunc && veiculos.length > 0 && view !== 'dashboard' && (!isGlobal || view === 'historico' || view === 'rotas' || view === 'abastecimento' || view === 'os' || view === 'despesaGeral') && (
                             <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200 animate-fade-in max-w-4xl mx-auto">
                                 
                                 {view === 'rotas' && (
@@ -1614,13 +1614,14 @@ const dataConsumo = useMemo(() => {
                                 )}
 
                                 {/* MÓDULO: ABASTECIMENTO */}
-                                {view === 'abastecimento' && !isGlobal && (
+                                {view === 'abastecimento' && (
                                     <div className="space-y-4">
                                         <div className="flex justify-between items-center mb-6">
                                             <h2 className="text-2xl font-black text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar Abastecimento' : '⛽ Registar Abastecimento'}</h2>
                                             {editingDespesaIndex !== null && <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg font-bold transition">Cancelar Edição</button>}
                                         </div>
                                         <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200">
+                                            {renderSeletorVeiculoGlobal()}
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                                 <div>
                                                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Data</label>
@@ -1688,13 +1689,14 @@ const dataConsumo = useMemo(() => {
                                 )}
 
                                 {/* MÓDULO: ORDEM DE SERVIÇO */}
-                                {view === 'os' && !isGlobal && (
+                                {view === 'os' && (
                                     <div className="space-y-4">
                                         <div className="flex justify-between items-center mb-6">
                                             <h2 className="text-2xl font-black text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar O.S.' : '🔧 Nova Ordem de Serviço'}</h2>
                                             {editingDespesaIndex !== null && <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg font-bold transition">Cancelar</button>}
                                         </div>
                                         <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200">
+                                            {renderSeletorVeiculoGlobal()}
                                             <div className="mb-4">
                                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Categoria do Serviço</label>
                                                 <select className="w-full bg-slate-50 p-4 rounded-xl font-bold text-slate-700 border border-slate-300 outline-none focus:border-blue-500" value={novaDespesa.categoria || ''} onChange={e => setNovaDespesa({...novaDespesa, categoria: e.target.value})}>
@@ -1776,14 +1778,15 @@ const dataConsumo = useMemo(() => {
                                     </div>
                                 )}
 
-                                {/* MÓDULO: DESPESAS GERAIS DE VIAGEM */}
-                                {view === 'despesaGeral' && !isGlobal && (
+                               {/* MÓDULO: DESPESAS GERAIS DE VIAGEM */}
+                                {view === 'despesaGeral' && (
                                     <div className="space-y-4">
                                         <div className="flex justify-between items-center mb-6">
                                             <h2 className="text-2xl font-black text-slate-800">{editingDespesaIndex !== null ? '✏️ Editar Despesa' : '💸 Registar Despesa de Viagem'}</h2>
                                             {editingDespesaIndex !== null && <button onClick={() => { setEditingDespesaIndex(null); setNovaDespesa(defaultDespesa); setView('historico'); }} className="text-xs bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg font-bold transition">Cancelar</button>}
                                         </div>
                                         <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200">
+                                            {renderSeletorVeiculoGlobal()}
                                             
                                             <div className="mb-4">
                                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Tipo de Gasto</label>
