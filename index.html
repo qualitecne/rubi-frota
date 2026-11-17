@@ -835,18 +835,21 @@ const dataConsumo = useMemo(() => {
             };
 
             const handleCriarRota = () => {
-                if(isGlobal) return alert('Selecione uma viatura para delegar a rota.');
+                const placaAlvo = isGlobal ? novaRotaGestor.placa : veiculoAtivo;
+                if(!placaAlvo || placaAlvo === 'TODOS') return alert('Selecione uma viatura para delegar a rota.');
                 if(!novaRotaGestor.origem || !novaRotaGestor.destino) return alert('Origem e destino são obrigatórios.');
+                
                 const hoje = new Date(); const yy = hoje.getFullYear().toString().slice(-2); const dia = String(hoje.getDate()).padStart(2, '0'); const mes = String(hoje.getMonth() + 1).padStart(2, '0');
                 const destCru = String(novaRotaGestor.destino).trim().split(' ')[0].toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
                 const baseId = `RT${yy}-${destCru}-${dia}${mes}`;
                 let finalId = baseId; let counter = 2;
                 while(rotas.find(r => r.id === finalId)) { finalId = `${baseId}-${counter}`; counter++; }
 
-                const novaRota = { id: finalId, placa: veiculoAtivo, status: 'Pendente', origem: novaRotaGestor.origem, destino: novaRotaGestor.destino, observacoes: novaRotaGestor.observacoes, data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: '', dataInicial: '', frete: '' };
+                const novaRota = { id: finalId, placa: placaAlvo, status: 'Pendente', origem: novaRotaGestor.origem, destino: novaRotaGestor.destino, observacoes: novaRotaGestor.observacoes, data: '', motorista: '', ajudante1: '', ajudante2: '', kmInicial: '', kmFinal: '', dataInicial: '', frete: '' };
                 const novasRotas = [...rotas, novaRota];
                 setRotas(novasRotas); salvarNaNuvem(veiculos, despesas, lembretes, novasRotas);
-                setNovaRotaGestor({origem: '', destino: '', observacoes: ''}); alert(`Rota agendada com sucesso!`);
+                setNovaRotaGestor({origem: '', destino: '', observacoes: '', placa: ''}); 
+                alert(`Rota agendada com sucesso para a viatura ${placaAlvo}!`);
             };
 
             const iniciarExecucaoRota = (rota) => {
@@ -1056,7 +1059,7 @@ const dataConsumo = useMemo(() => {
                                 )}
                             </div>
                         )}
-                        {!showCadastro && !showCadastroFunc && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'rotas' || view === 'os' || view === 'abastecimento' || view === 'lembretes' || view === 'despesaGeral') && (
+                        {!showCadastro && !showCadastroFunc && isGlobal && veiculos.length > 0 && userRole === 'GESTOR' && (view === 'os' || view === 'abastecimento' || view === 'lembretes' || view === 'despesaGeral') && (
                             <div className="bg-white p-10 text-center text-slate-500 rounded-3xl shadow-sm border border-slate-200 mt-10 max-w-2xl mx-auto">
                                 <span className="text-5xl block mb-4 opacity-50">🔒</span>
                                 <h2 className="font-bold text-xl text-slate-700 mb-2">Ação Não Permitida na Visão Global</h2>
@@ -1377,14 +1380,20 @@ const dataConsumo = useMemo(() => {
                             </div>
                         )}
 
-                        {!showCadastro && !showCadastroFunc && veiculos.length > 0 && view !== 'dashboard' && (!isGlobal || view === 'historico') && (
+                        {!showCadastro && !showCadastroFunc && veiculos.length > 0 && view !== 'dashboard' && (!isGlobal || view === 'historico' || view === 'rotas') && (
                             <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200 animate-fade-in max-w-4xl mx-auto">
                                 
-                                {view === 'rotas' && !isGlobal && (
+                                {view === 'rotas' && (
                                     <div className="space-y-6">
                                         {userRole === 'GESTOR' && execucaoRota === null && (
                                             <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100 space-y-4">
                                                 <h3 className="font-black text-blue-900 text-lg flex items-center gap-2">🗺️ Agendar Rota</h3>
+                                                {isGlobal && (
+                                                    <select className="w-full border border-blue-200 p-3 rounded-xl text-sm font-bold text-blue-900 bg-white outline-none focus:border-blue-500 shadow-sm" value={novaRotaGestor.placa || ''} onChange={e => setNovaRotaGestor({...novaRotaGestor, placa: e.target.value})}>
+                                                        <option value="">-- Selecione a Viatura para esta viagem --</option>
+                                                        {veiculos.map(v => <option key={v.placa} value={v.placa}>{v.placa} - {v.veiculo}</option>)}
+                                                    </select>
+                                                )}
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                                     <input className="w-full border border-slate-300 p-3 rounded-xl text-sm outline-none focus:border-blue-500" placeholder="Origem" value={novaRotaGestor.origem} onChange={e => setNovaRotaGestor({...novaRotaGestor, origem: e.target.value})} />
                                                     <input className="w-full border border-slate-300 p-3 rounded-xl text-sm outline-none focus:border-blue-500" placeholder="Destino" value={novaRotaGestor.destino} onChange={e => setNovaRotaGestor({...novaRotaGestor, destino: e.target.value})} />
@@ -1529,7 +1538,10 @@ const dataConsumo = useMemo(() => {
                                                                             {r.status === 'Concluída' && <span className="text-[9px] font-black text-slate-400 bg-white px-1.5 py-0.5 rounded border border-slate-200 tracking-wider">{r.id}</span>}
                                                                             {r.conferida && <span className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-blue-600 text-white shadow-sm flex items-center gap-1"><span>✔️</span> CONFERIDA</span>}
                                                                         </div>
-                                                                        <h4 className="font-black text-slate-800 text-lg leading-tight">{r.origem} <span className="text-slate-400 font-normal mx-1">➔</span> {r.destino}</h4>
+                                                                        <h4 className="font-black text-slate-800 text-lg leading-tight">
+                                                                            {isGlobal && <span className="bg-slate-800 text-white text-[10px] font-black px-2 py-0.5 rounded tracking-wider mr-2 align-middle">{r.placa}</span>}
+                                                                            {r.origem} <span className="text-slate-400 font-normal mx-1">➔</span> {r.destino}
+                                                                        </h4>
                                                                     </div>
                                                                     {r.status === 'Concluída' && (
                                                                         <div className="text-right bg-white p-2 rounded-lg border border-slate-100 shadow-sm">
