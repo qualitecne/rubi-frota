@@ -153,6 +153,7 @@
             const [editingDespesaIndex, setEditingDespesaIndex] = useState(null);
             const [isUploading, setIsUploading] = useState(false);
             const [searchTerm, setSearchTerm] = useState('');
+            const [filtroCatEvolucao, setFiltroCatEvolucao] = useState('TODAS');
 
             const [novoVeiculo, setNovoVeiculo] = useState({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
             const [novoFuncionario, setNovoFuncionario] = useState({ nome: '', cargo: 'Motorista' });
@@ -381,7 +382,7 @@
                 
                 despesasIniciais.forEach(d => {
                     if(d.data && typeof d.data === 'string') {
-                        const mes = d.data.substring(0, 7); // Extrai apenas YYYY-MM
+                        const mes = d.data.substring(0, 7);
                         const cat = String(d.categoria || 'Outros');
                         
                         if (!map[mes]) map[mes] = {};
@@ -393,18 +394,26 @@
                 const labels = Object.keys(map).sort();
                 if (labels.length === 0) return null;
                 
-                const categorias = Array.from(categoriasSet).sort();
+                let categorias = Array.from(categoriasSet).sort();
+                const todasAsCategorias = [...categorias];
+                
+                // Aplica o filtro selecionado pelo utilizador
+                if (filtroCatEvolucao !== 'TODAS') {
+                    categorias = categorias.filter(c => c === filtroCatEvolucao);
+                }
+
                 const cores = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#64748b'];
                 
-                const datasets = categorias.map((cat, i) => ({
+                const datasets = categorias.map((cat) => ({
                     label: cat,
                     data: labels.map(mes => map[mes][cat] || 0),
-                    backgroundColor: cores[i % cores.length],
+                    // Mantém a cor original da categoria mesmo quando filtrada:
+                    backgroundColor: cores[todasAsCategorias.indexOf(cat) % cores.length],
                     borderRadius: 4
                 }));
                 
-                return { labels, datasets };
-            }, [despesasIniciais]);
+                return { labels, datasets, categoriasDisponiveis: todasAsCategorias };
+            }, [despesasIniciais, filtroCatEvolucao]);
             
             const dataEvolucaoMensal = useMemo(() => {
                 const map = {};
@@ -1045,9 +1054,32 @@
                                     )}
                                 </div>
 
+                                {/* ROW 3: GRÁFICOS (GRID) */}
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                                    
+                                    {/* NOVO GRÁFICO INTERATIVO COM LISTA SUSPENSA */}
+                                    {dataEvolucaoCategoriaMensal && (
+                                        <div className="bg-white p-6 rounded-2xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-100 flex flex-col justify-between glass-card min-h-[300px]">
+                                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-2">
+                                                <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mt-1">Gastos por Categoria</h3>
+                                                <select 
+                                                    className="text-[10px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-2 outline-none cursor-pointer focus:border-blue-400 w-full sm:w-auto shadow-sm"
+                                                    value={filtroCatEvolucao}
+                                                    onChange={e => setFiltroCatEvolucao(e.target.value)}
+                                                >
+                                                    <option value="TODAS">📊 TODAS AS CATEGORIAS</option>
+                                                    {dataEvolucaoCategoriaMensal.categoriasDisponiveis.map(c => <option key={c} value={c}>{c}</option>)}
+                                                </select>
+                                            </div>
+                                            <ChartWrapper 
+                                                type="bar" 
+                                                data={dataEvolucaoCategoriaMensal} 
+                                                options={{ plugins: { legend: { display: filtroCatEvolucao === 'TODAS', position: 'bottom', labels: { boxWidth: 12, font: {size: 10} } } }, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } } } }} 
+                                            />
+                                        </div>
+                                    )}
+
                                     {/* Globais */}
-                                    {isGlobal && renderChartOrInsight(dataEvolucaoCategoriaMensal, 'bar', 'Gastos por Categoria (Mês a Mês)', true, { plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: {size: 10} } } }, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } } } })}
                                     {isGlobal && renderChartOrInsight(dataPorCategoria, 'doughnut', 'Aonde estamos gastando mais?')}
                                     {isGlobal && renderChartOrInsight(dataMediaCategoria, 'bar', 'Ticket Médio de cada Despesa', false, {indexAxis: 'y'})}
                                     {isGlobal && renderChartOrInsight(dataMediaKmDestino, 'bar', 'Média de KM por Destino', false, {indexAxis: 'y'})}
@@ -1058,7 +1090,6 @@
                                     {isGlobal && renderChartOrInsight(dataKmMensal, 'bar', 'Evolução de Produtividade (KM Rodado)', true)}
 
                                     {/* Individuais */}
-                                    {!isGlobal && renderChartOrInsight(dataEvolucaoCategoriaMensal, 'bar', 'Gastos por Categoria (Mês a Mês)', true, { plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: {size: 10} } } }, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } } } })}
                                     {!isGlobal && renderChartOrInsight(dataPorCategoria, 'doughnut', 'Aonde estamos gastando mais?')}
                                     {!isGlobal && renderChartOrInsight(dataMediaCategoria, 'bar', 'Ticket Médio de cada Despesa', false, {indexAxis: 'y'})}
                                     {!isGlobal && renderChartOrInsight(dataMediaKmDestino, 'bar', 'Média de KM por Destino', false, {indexAxis: 'y'})}
