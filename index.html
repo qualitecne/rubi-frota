@@ -496,7 +496,11 @@
                 };
                 reader.readAsText(file);
             };
-
+const getNomeRota = (rotaId) => {
+                const r = rotas.find(rt => String(rt.id) === String(rotaId));
+                return r ? (r.status === 'Pendente' ? `⏳ ${r.origem} ➔ ${r.destino}` : `${r.id} (${r.origem} ➔ ${r.destino})`) : `Rota ${rotaId}`;
+            };
+            
             const atualizarKmVeiculo = (novoKmInformado, placaVeiculo) => {
                 const novoKm = parseFloat(novoKmInformado);
                 const veiculoAlvo = veiculos.find(v => v.placa === placaVeiculo);
