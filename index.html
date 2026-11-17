@@ -1605,7 +1605,7 @@
                                                         const corBarra = categoria.includes('Abastecimento') ? 'bg-blue-500' : categoria.includes('Manutenção') ? 'bg-amber-500' : 'bg-emerald-500';
 
                                                         return (
-                                                            <details key={categoria} className="bg-transparent mb-6 group/cat" open>
+                                                            <details key={categoria} className="bg-transparent mb-6 group/cat">
                                                                 <summary className="bg-slate-800 text-white p-4 rounded-2xl cursor-pointer flex justify-between items-center shadow-md hover:bg-slate-700 transition outline-none select-none">
                                                                     <div className="flex items-center gap-3">
                                                                         <div className={`w-3 h-3 rounded-full ${corBarra}`}></div>
