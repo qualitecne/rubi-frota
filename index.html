@@ -1046,6 +1046,8 @@
                                 </div>
 
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                                    {/* Globais */}
+                                    {isGlobal && renderChartOrInsight(dataEvolucaoCategoriaMensal, 'bar', 'Gastos por Categoria (Mês a Mês)', true, { plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: {size: 10} } } }, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } } } })}
                                     {isGlobal && renderChartOrInsight(dataPorCategoria, 'doughnut', 'Aonde estamos gastando mais?')}
                                     {isGlobal && renderChartOrInsight(dataMediaCategoria, 'bar', 'Ticket Médio de cada Despesa', false, {indexAxis: 'y'})}
                                     {isGlobal && renderChartOrInsight(dataMediaKmDestino, 'bar', 'Média de KM por Destino', false, {indexAxis: 'y'})}
@@ -1055,6 +1057,8 @@
                                     {isGlobal && renderChartOrInsight(dataEvolucaoMensal, 'bar', 'Evolução Mensal de Gastos (Cashburn)', true)}
                                     {isGlobal && renderChartOrInsight(dataKmMensal, 'bar', 'Evolução de Produtividade (KM Rodado)', true)}
 
+                                    {/* Individuais */}
+                                    {!isGlobal && renderChartOrInsight(dataEvolucaoCategoriaMensal, 'bar', 'Gastos por Categoria (Mês a Mês)', true, { plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: {size: 10} } } }, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } } } })}
                                     {!isGlobal && renderChartOrInsight(dataPorCategoria, 'doughnut', 'Aonde estamos gastando mais?')}
                                     {!isGlobal && renderChartOrInsight(dataMediaCategoria, 'bar', 'Ticket Médio de cada Despesa', false, {indexAxis: 'y'})}
                                     {!isGlobal && renderChartOrInsight(dataMediaKmDestino, 'bar', 'Média de KM por Destino', false, {indexAxis: 'y'})}
