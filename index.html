@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RUBI FROTA - Gestão Inteligente</title>
+    <!-- Bibliotecas Essenciais -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -34,20 +35,22 @@
         const { useState, useEffect, useRef, useMemo } = React;
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx7N4C1lZperjJZiDlk_SPDEl4OlfvuvbjdePeWKa-qr2ojbu4kmL862ntMjjcZNPrPQQ/exec';
 
+        // =======================================================
+        // SISTEMA ANTI-CRASH (EVITA O ECRÃ BRANCO)
+        // =======================================================
         class ErrorBoundary extends React.Component {
             constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
             static getDerivedStateFromError(error) { return { hasError: true }; }
-            componentDidCatch(error, errorInfo) { this.setState({ error, errorInfo }); console.error("Erro capturado:", error, errorInfo); }
+            componentDidCatch(error, errorInfo) { this.setState({ error: error, errorInfo: errorInfo }); console.error("Erro interno capturado:", error, errorInfo); }
             render() {
                 if (this.state.hasError) {
                     return (
                         <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
                             <div className="bg-white p-8 rounded-3xl max-w-2xl w-full shadow-2xl border-4 border-red-500">
-                                <h2 className="text-2xl font-black text-red-600 mb-4">⚠️ Erro de Sistema</h2>
-                                <p className="text-slate-600 mb-4 text-sm font-bold">O aplicativo encontrou um dado corrompido. Por favor, limpe a memória:</p>
+                                <h2 className="text-2xl font-black text-red-600 mb-4">⚠️ Erro de Sistema (Crash Evitado)</h2>
+                                <p className="text-slate-600 mb-4 text-sm font-bold">O aplicativo encontrou um dado corrompido. Limpe a memória do dispositivo clicando abaixo:</p>
                                 <div className="bg-slate-100 p-4 rounded-xl overflow-x-auto text-[10px] font-mono text-slate-700 mb-6 border border-slate-300">
                                     <p className="font-bold text-red-500 mb-2">{this.state.error && this.state.error.toString()}</p>
-                                    <p>{this.state.errorInfo && this.state.errorInfo.componentStack}</p>
                                 </div>
                                 <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full bg-red-600 hover:bg-red-700 text-white font-black p-4 rounded-xl shadow-lg transition">🧹 Limpar Cache e Reiniciar</button>
                             </div>
@@ -58,6 +61,9 @@
             }
         }
 
+        // =======================================================
+        // COMPONENTES DE UI PREMIUM
+        // =======================================================
         const formatCurrency = (val) => isNaN(parseFloat(val)) ? 'R$ 0,00' : parseFloat(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
         const KPICard = ({ icon, title, value, subtitle, colorClass }) => (
@@ -134,7 +140,11 @@
             );
         };
 
+        // =======================================================
+        // APLICAÇÃO PRINCIPAL (APP)
+        // =======================================================
         function ControleFrotaMulti() {
+            // 1. ESTADOS BÁSICOS
             const [userRole, setUserRole] = useState(null); 
             const [veiculos, setVeiculos] = useState([]);
             const [veiculoAtivo, setVeiculoAtivo] = useState('TODOS'); 
@@ -152,8 +162,11 @@
             const [syncStatus, setSyncStatus] = useState('A conectar...');
             const [editingDespesaIndex, setEditingDespesaIndex] = useState(null);
             const [isUploading, setIsUploading] = useState(false);
+            
+            // Filtros de Pesquisa e Data
             const [searchTerm, setSearchTerm] = useState('');
             const [filtroCatEvolucao, setFiltroCatEvolucao] = useState('TODAS');
+            const [filtroMes, setFiltroMes] = useState('TODOS'); // NOVO: Mês para filtrar todo o Dashboard
 
             const [novoVeiculo, setNovoVeiculo] = useState({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
             const [novoFuncionario, setNovoFuncionario] = useState({ nome: '', cargo: 'Motorista' });
@@ -164,13 +177,52 @@
             const [novaRotaGestor, setNovaRotaGestor] = useState({ origem: '', destino: '', observacoes: '' });
             const [execucaoRota, setExecucaoRota] = useState(null);
 
+            // 2. VARIÁVEIS BASE PARA FILTRAGEM (SEM OPTIONAL CHAINING "?.")
             const isGlobal = veiculoAtivo === 'TODOS';
             const veiculoAtual = isGlobal ? null : veiculos.find(v => v.placa === veiculoAtivo);
             const kmAtualNum = veiculoAtual ? parseFloat(veiculoAtual.kmAtual) || 0 : 0;
             const motoristaVeiculo = veiculoAtual ? veiculoAtual.motorista : 'N/I';
             const ccVeiculo = veiculoAtual ? veiculoAtual.centroCusto : 'N/I';
             
-            const despesasIniciais = useMemo(() => isGlobal ? despesas.slice().reverse() : despesas.filter(d => d.placa === veiculoAtivo).reverse(), [despesas, veiculoAtivo, isGlobal]);
+            // Recolher todos os meses disponíveis para o menu suspenso
+            const mesesDisponiveis = useMemo(() => {
+                const meses = new Set();
+                despesas.forEach(d => { if(d.data && typeof d.data === 'string' && d.data.includes('-')) meses.add(d.data.substring(0, 7)); });
+                return Array.from(meses).sort().reverse();
+            }, [despesas]);
+
+            // Despesas globais da tela já filtradas pelo MÊS
+            const despesasIniciais = useMemo(() => {
+                let d = isGlobal ? despesas.slice().reverse() : despesas.filter(x => x.placa === veiculoAtivo).reverse();
+                if (filtroMes !== 'TODOS') {
+                    d = d.filter(x => x.data && x.data.startsWith(filtroMes));
+                }
+                return d;
+            }, [despesas, veiculoAtivo, isGlobal, filtroMes]);
+            
+            // Rotas globais da tela já filtradas pelo MÊS
+            const rotasDashboard = useMemo(() => {
+                let r = isGlobal ? rotas : rotas.filter(x => x.placa === veiculoAtivo);
+                if (filtroMes !== 'TODOS') {
+                    r = r.filter(x => {
+                        const dataBruta = String(x.dataInicial || x.data || "");
+                        if (!dataBruta) return false;
+                        const parteData = dataBruta.split(' ')[0];
+                        if (parteData.includes('/')) {
+                            const p = parteData.split('/');
+                            if (p.length === 3) {
+                                const ano = p[2].length === 2 ? `20${p[2]}` : p[2];
+                                return `${ano}-${p[1]}` === filtroMes;
+                            }
+                        } else if (parteData.includes('-')) {
+                            return parteData.startsWith(filtroMes);
+                        }
+                        return false;
+                    });
+                }
+                return r;
+            }, [rotas, veiculoAtivo, isGlobal, filtroMes]);
+
             const rotasParaVincular = useMemo(() => isGlobal ? [] : rotas.filter(r => r.placa === veiculoAtivo).reverse().slice(0, 20), [rotas, veiculoAtivo, isGlobal]);
 
             const getKmAtual = (placa) => { const v = veiculos.find(ve => ve.placa === placa); return v ? parseFloat(v.kmAtual) || 0 : 0; };
@@ -215,24 +267,28 @@
                 return 'OK';
             };
 
+            // ==========================================
+            // 3. CÁLCULOS DE BUSINESS INTELLIGENCE (BI)
+            // ==========================================
             const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#0ea5e9'];
+            
             const totalGasto = useMemo(() => despesasIniciais.reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0), [despesasIniciais]);
             
             const custoKmGlobal = useMemo(() => {
                 if (!isGlobal) return null;
-                const kms = rotas.filter(r => r.status === 'Concluída').reduce((a, b) => a + (Math.max(0, (parseFloat(b.kmFinal)||0) - (parseFloat(b.kmInicial)||0)) || 0), 0);
+                const kms = rotasDashboard.filter(r => r.status === 'Concluída').reduce((a, b) => a + (Math.max(0, (parseFloat(b.kmFinal)||0) - (parseFloat(b.kmInicial)||0)) || 0), 0);
                 return kms > 0 ? (totalGasto / kms).toFixed(2) : '0.00';
-            }, [totalGasto, rotas, isGlobal]);
+            }, [totalGasto, rotasDashboard, isGlobal]);
 
             const rankingMotoristas = useMemo(() => {
                 if (!isGlobal) return [];
                 const map = {};
-                rotas.filter(r => r.status === 'Concluída' && r.motorista).forEach(r => {
+                rotasDashboard.filter(r => r.status === 'Concluída' && r.motorista).forEach(r => {
                     const dist = Math.max(0, (parseFloat(r.kmFinal)||0) - (parseFloat(r.kmInicial)||0)) || 0;
                     if (dist > 0) map[r.motorista] = (map[r.motorista] || 0) + dist;
                 });
                 return Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 5);
-            }, [rotas, isGlobal]);
+            }, [rotasDashboard, isGlobal]);
 
             const painelRisco = useMemo(() => {
                 let critico = 0, atencao = 0;
@@ -292,11 +348,17 @@
                 if (!isGlobal) return [];
                 const limite = new Date(); limite.setDate(limite.getDate() - 30);
                 const veiculosComRota = new Set();
-                rotas.filter(r => r.status === 'Concluída' && r.dataInicial).forEach(r => {
-                    const dataBruta = String(r.dataInicial).split(' ')[0].split('/');
-                    if(dataBruta.length === 3) {
-                        const dateRota = new Date(`${dataBruta[2]}-${dataBruta[1]}-${dataBruta[0]}T12:00:00`);
-                        if (dateRota >= limite) veiculosComRota.add(r.placa);
+                rotas.filter(r => r.status === 'Concluída' && (r.dataInicial || r.data)).forEach(r => {
+                    const dataBruta = String(r.dataInicial || r.data || "").split(' ')[0];
+                    if (dataBruta.includes('/')) {
+                        const p = dataBruta.split('/');
+                        if(p.length === 3) {
+                            const ano = p[2].length === 2 ? `20${p[2]}` : p[2];
+                            const dateRota = new Date(`${ano}-${p[1]}-${p[0]}T12:00:00`);
+                            if (dateRota >= limite) veiculosComRota.add(r.placa);
+                        }
+                    } else if (dataBruta.includes('-')) {
+                        if (new Date(dataBruta) >= limite) veiculosComRota.add(r.placa);
                     }
                 });
                 return veiculos.filter(v => !veiculosComRota.has(v.placa));
@@ -305,12 +367,12 @@
             const statsDiasOperacao = useMemo(() => {
                 if (isGlobal) return null;
                 const diasRod = new Set();
-                rotas.filter(r => r.placa === veiculoAtivo && r.status === 'Concluída' && r.dataInicial).forEach(r => diasRod.add(String(r.dataInicial).split(' ')[0]));
+                rotasDashboard.filter(r => r.status === 'Concluída' && (r.dataInicial || r.data)).forEach(r => diasRod.add(String(r.dataInicial || r.data).split(' ')[0]));
                 const diasOfi = new Set();
                 despesasIniciais.filter(d => String(d.categoria).includes('Mecânica') && d.data).forEach(d => diasOfi.add(d.data));
                 if (diasRod.size === 0 && diasOfi.size === 0) return null;
                 return { rodando: diasRod.size, oficina: diasOfi.size };
-            }, [rotas, despesasIniciais, veiculoAtivo, isGlobal]);
+            }, [rotasDashboard, despesasIniciais, isGlobal]);
 
             const dataPorCategoria = useMemo(() => {
                 const map = {};
@@ -332,8 +394,7 @@
 
             const dataMediaKmDestino = useMemo(() => {
                 const map = {};
-                const rotasFiltradas = isGlobal ? rotas : rotas.filter(r => r.placa === veiculoAtivo);
-                rotasFiltradas.filter(r => r.status === 'Concluída' && r.kmFinal && r.kmInicial).forEach(r => {
+                rotasDashboard.filter(r => r.status === 'Concluída' && r.kmFinal && r.kmInicial).forEach(r => {
                     const dist = Math.max(0, (parseFloat(r.kmFinal)||0) - (parseFloat(r.kmInicial)||0)) || 0;
                     const dest = String(r.destino || 'Desconhecido').trim().toUpperCase();
                     if (dist > 0) { if (!map[dest]) map[dest] = { totalKm: 0, count: 0 }; map[dest].totalKm += dist; map[dest].count += 1; }
@@ -341,7 +402,7 @@
                 const labels = Object.keys(map).sort();
                 if (labels.length === 0) return null;
                 return { labels, datasets: [{ label: 'Média de Distância (KM)', data: labels.map(k => (map[k].totalKm / map[k].count).toFixed(0)), backgroundColor: '#14b8a6', borderRadius: 6 }] };
-            }, [rotas, isGlobal, veiculoAtivo]);
+            }, [rotasDashboard, isGlobal]);
 
             const dataRankingVeiculos = useMemo(() => {
                 if(!isGlobal) return null;
@@ -376,6 +437,17 @@
                 return { labels: sorted.map(i => i[0]), datasets: [{ label: 'Total Pago (R$)', data: sorted.map(i => i[1]), backgroundColor: '#0ea5e9', borderRadius: 4 }] };
             }, [despesasIniciais, isGlobal]);
 
+            const dataEvolucaoMensal = useMemo(() => {
+                const map = {};
+                despesasIniciais.forEach(d => {
+                    if(d.data && typeof d.data === 'string') { const mes = d.data.substring(0, 7); map[mes] = (map[mes] || 0) + (parseFloat(d.valor) || 0); }
+                });
+                const sortedKeys = Object.keys(map).sort();
+                if (sortedKeys.length === 0) return null;
+                return { labels: sortedKeys, datasets: [{ label: 'Gasto (R$)', data: sortedKeys.map(k => map[k]), backgroundColor: '#3b82f6', borderRadius: 6 }] };
+            }, [despesasIniciais]);
+
+            // NOVO: GRÁFICO INTERATIVO EVOLUÇÃO POR CATEGORIAS
             const dataEvolucaoCategoriaMensal = useMemo(() => {
                 const map = {};
                 const categoriasSet = new Set();
@@ -397,43 +469,37 @@
                 let categorias = Array.from(categoriasSet).sort();
                 const todasAsCategorias = [...categorias];
                 
-                // Aplica o filtro selecionado pelo utilizador
-                if (filtroCatEvolucao !== 'TODAS') {
-                    categorias = categorias.filter(c => c === filtroCatEvolucao);
-                }
-
+                if (filtroCatEvolucao !== 'TODAS') { categorias = categorias.filter(c => c === filtroCatEvolucao); }
                 const cores = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#64748b'];
                 
                 const datasets = categorias.map((cat) => ({
                     label: cat,
                     data: labels.map(mes => map[mes][cat] || 0),
-                    // Mantém a cor original da categoria mesmo quando filtrada:
                     backgroundColor: cores[todasAsCategorias.indexOf(cat) % cores.length],
                     borderRadius: 4
                 }));
                 
                 return { labels, datasets, categoriasDisponiveis: todasAsCategorias };
             }, [despesasIniciais, filtroCatEvolucao]);
-            
-            const dataEvolucaoMensal = useMemo(() => {
-                const map = {};
-                despesasIniciais.forEach(d => {
-                    if(d.data && typeof d.data === 'string') { const mes = d.data.substring(0, 7); map[mes] = (map[mes] || 0) + (parseFloat(d.valor) || 0); }
-                });
-                const sortedKeys = Object.keys(map).sort();
-                if (sortedKeys.length === 0) return null;
-                return { labels: sortedKeys, datasets: [{ label: 'Gasto (R$)', data: sortedKeys.map(k => map[k]), backgroundColor: '#3b82f6', borderRadius: 6 }] };
-            }, [despesasIniciais]);
 
             const dataKmMensal = useMemo(() => {
                 if (!isGlobal) return null;
                 const map = {};
-                rotas.filter(r => r.status === 'Concluída' && r.kmFinal && r.kmInicial).forEach(r => {
+                rotasDashboard.filter(r => r.status === 'Concluída' && r.kmFinal && r.kmInicial).forEach(r => {
                     const dataBruta = String(r.dataInicial || r.data || "");
                     if(dataBruta) {
-                        const dateParts = dataBruta.split(' ')[0].split('/');
-                        if (dateParts.length === 3) {
-                            const mes = `${dateParts[2]}-${dateParts[1]}`; const dist = Math.max(0, (parseFloat(r.kmFinal)||0) - (parseFloat(r.kmInicial)||0)) || 0;
+                        const parteData = dataBruta.split(' ')[0];
+                        if (parteData.includes('/')) {
+                            const p = parteData.split('/');
+                            if (p.length === 3) {
+                                const ano = p[2].length === 2 ? `20${p[2]}` : p[2];
+                                const mes = `${ano}-${p[1]}`;
+                                const dist = Math.max(0, (parseFloat(r.kmFinal)||0) - (parseFloat(r.kmInicial)||0)) || 0;
+                                if (dist > 0) map[mes] = (map[mes] || 0) + dist;
+                            }
+                        } else if (parteData.includes('-')) {
+                            const mes = parteData.substring(0, 7);
+                            const dist = Math.max(0, (parseFloat(r.kmFinal)||0) - (parseFloat(r.kmInicial)||0)) || 0;
                             if (dist > 0) map[mes] = (map[mes] || 0) + dist;
                         }
                     }
@@ -441,36 +507,27 @@
                 const sortedKeys = Object.keys(map).sort();
                 if (sortedKeys.length === 0) return null;
                 return { labels: sortedKeys, datasets: [{ label: 'KM Percorrido', data: sortedKeys.map(k => map[k]), backgroundColor: '#8b5cf6', borderRadius: 4 }] };
-            }, [rotas, isGlobal]);
-
-            const dataConsumo = useMemo(() => {
-                if(isGlobal) return null;
-                const abs = despesasIniciais.filter(d => d.categoria === 'Abastecimento' && String(d.descricao || '').includes('L a')).sort((a, b) => new Date(a.data || 0) - new Date(b.data || 0));
-                const labels = []; const data = [];
-                for(let i = 1; i < abs.length; i++) {
-                    const kmAtual = parseFloat(abs[i].km); const kmAnterior = parseFloat(abs[i-1].km);
-                    const match = String(abs[i].descricao || '').match(/\[(.*?)L a/); const litros = match ? parseFloat(match[1]) : 0;
-                    if(kmAtual > kmAnterior && litros > 0) {
-                        const kml = (kmAtual - kmAnterior) / litros;
-                        if(kml > 0 && kml < 30) { labels.push(abs[i].data ? String(abs[i].data).substring(5) : ''); data.push(kml.toFixed(2)); }
-                    }
-                }
-                if (labels.length === 0) return null;
-                return { labels, datasets: [{ label: 'KM por Litro', data, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', tension: 0.4, fill: true }] };
-            }, [despesasIniciais, isGlobal]);
+            }, [rotasDashboard, isGlobal]);
 
             const dataCustoKm = useMemo(() => {
                 if (isGlobal) return null;
                 const costMap = {};
                 despesasIniciais.forEach(d => { if(d.data && typeof d.data === 'string') costMap[d.data.substring(0, 7)] = (costMap[d.data.substring(0, 7)] || 0) + (parseFloat(d.valor) || 0); });
                 const kmMap = {};
-                rotas.filter(r => r.placa === veiculoAtivo && r.status === 'Concluída' && r.kmFinal && r.kmInicial).forEach(r => {
+                rotasDashboard.filter(r => r.status === 'Concluída' && r.kmFinal && r.kmInicial).forEach(r => {
                     const dataBruta = String(r.dataInicial || r.data || "");
                     if(dataBruta) {
-                        const dp = dataBruta.split(' ')[0].split('/');
-                        if (dp.length === 3) {
-                            const m = `${dp[2]}-${dp[1]}`; const dist = Math.max(0, (parseFloat(r.kmFinal)||0) - (parseFloat(r.kmInicial)||0)) || 0;
-                            if (dist > 0) kmMap[m] = (kmMap[m] || 0) + dist;
+                        const parteData = dataBruta.split(' ')[0];
+                        let mes = null;
+                        if (parteData.includes('/')) {
+                            const p = parteData.split('/');
+                            if (p.length === 3) mes = `${p[2].length === 2 ? `20${p[2]}` : p[2]}-${p[1]}`;
+                        } else if (parteData.includes('-')) {
+                            mes = parteData.substring(0, 7);
+                        }
+                        if (mes) {
+                            const dist = Math.max(0, (parseFloat(r.kmFinal)||0) - (parseFloat(r.kmInicial)||0)) || 0;
+                            if (dist > 0) kmMap[mes] = (kmMap[mes] || 0) + dist;
                         }
                     }
                 });
@@ -478,54 +535,8 @@
                 const data = meses.map(m => (kmMap[m] > 0) ? ((costMap[m] || 0) / kmMap[m]).toFixed(2) : 0);
                 if (data.filter(v => v > 0).length === 0) return null;
                 return { labels: meses, datasets: [{ label: 'Custo R$ / KM', data, borderColor: '#ef4444', backgroundColor: '#ef4444', tension: 0.3, fill: false }] };
-            }, [despesasIniciais, rotas, veiculoAtivo, isGlobal]);
-
-            const dataPrecoCombustivel = useMemo(() => {
-                if (isGlobal) return null;
-                const abs = despesasIniciais.filter(d => d.categoria === 'Abastecimento' && parseFloat(d.precoLitro) > 0).sort((a,b) => new Date(a.data || 0) - new Date(b.data || 0));
-                if (abs.length === 0) return null;
-                return { labels: abs.map(a => a.data ? String(a.data).substring(5) : ''), datasets: [{ label: 'R$ p/ Litro', data: abs.map(a => parseFloat(a.precoLitro).toFixed(2)), borderColor: '#f59e0b', backgroundColor: '#f59e0b', tension: 0.3, fill: false }] };
-            }, [despesasIniciais, isGlobal]);
-
-            useEffect(() => {
-                const savedRole = localStorage.getItem('rubi_frota_role');
-                if (savedRole) { setUserRole(savedRole); if (savedRole === 'OPERACIONAL') setView('rotas'); }
-                carregarDaNuvem();
-            }, []);
-
-            useEffect(() => {
-                if ((view === 'os' || view === 'abastecimento' || view === 'despesaGeral') && editingDespesaIndex === null && veiculoAtivo !== 'TODOS') {
-                    const rascunhoStr = localStorage.getItem('rubi_frota_rascunho_despesa');
-                    if (rascunhoStr) {
-                        try { const parsed = JSON.parse(rascunhoStr); if (parsed.view === view && parsed.veiculo === veiculoAtivo) setNovaDespesa(parsed.despesa); } catch(e){}
-                    }
-                }
-            }, [view, veiculoAtivo, editingDespesaIndex]);
-
-            const carregarDaNuvem = async () => {
-                setSyncStatus('A puxar dados...');
-                try {
-                    const response = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'carregar' }) });
-                    const result = await response.json();
-                    if (result.status === 'sucesso') {
-                        setVeiculos(result.dados.veiculos || []); setDespesas(result.dados.despesas || []); setLembretes(result.dados.lembretes || []);
-                        setRotas(result.dados.rotas || []); setFuncionarios(result.dados.funcionarios || []);
-                        setSyncStatus('Sincronizado'); localStorage.setItem('rubi_frota_db', JSON.stringify(result.dados));
-                    }
-                } catch (error) {
-                    setSyncStatus('Modo Offline');
-                    const saved = localStorage.getItem('rubi_frota_db');
-                    if (saved) {
-                        try {
-                            const parsed = JSON.parse(saved);
-                            setVeiculos(Array.isArray(parsed.veiculos) ? parsed.veiculos : []); setDespesas(Array.isArray(parsed.despesas) ? parsed.despesas : []);
-                            setLembretes(Array.isArray(parsed.lembretes) ? parsed.lembretes : []); setRotas(Array.isArray(parsed.rotas) ? parsed.rotas : []);
-                            setFuncionarios(Array.isArray(parsed.funcionarios) ? parsed.funcionarios : []);
-                        } catch(e){}
-                    }
-                }
-            };
-            const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) => {
+            }, [despesasIniciais, rotasDashboard, veiculoAtivo, isGlobal]);
+const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) => {
                 setSyncStatus('A guardar...');
                 localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots, funcionarios: funcs }));
                 try {
@@ -787,7 +798,7 @@
                 (d.rotaVinculada && String(d.rotaVinculada).toLowerCase().includes(searchTerm.toLowerCase()))
             );
             const lembretesFiltrados = isGlobal ? lembretes : lembretes.filter(l => l.placa === veiculoAtivo);
-            const rotasFiltradas = isGlobal ? rotas.slice().reverse() : rotas.filter(r => r.placa === veiculoAtivo).reverse();
+            const rotasFiltradas = isGlobal ? rotasDashboard.slice().reverse() : rotasDashboard.filter(r => r.placa === veiculoAtivo).reverse();
             const rotasExibicao = userRole === 'OPERACIONAL' ? rotasFiltradas.filter(r => r.status === 'Pendente') : rotasFiltradas;
 
             if (!userRole) {
@@ -980,14 +991,26 @@
                                         <p className="text-sm text-slate-500 mt-1 font-medium">{isGlobal ? 'Métricas consolidadas financeiras e logísticas de toda a frota.' : 'Dashboard detalhado de performance, consumo e custos mecânicos.'}</p>
                                     </div>
                                     
-                                    {isGlobal && (
-                                        <div className="flex gap-2">
-                                            <button onClick={exportarBackup} className="bg-white border border-slate-300 text-slate-700 text-xs font-bold px-4 py-2 rounded-lg shadow-sm hover:bg-slate-50 transition">📥 Exportar JSON</button>
-                                            <label className="bg-white border border-slate-300 text-slate-700 text-xs font-bold px-4 py-2 rounded-lg shadow-sm hover:bg-slate-50 cursor-pointer transition">
-                                                📤 Restaurar <input type="file" accept=".json" className="hidden" onChange={importarBackup} />
-                                            </label>
-                                        </div>
-                                    )}
+                                    <div className="flex flex-col sm:flex-row gap-3 mt-4 md:mt-0">
+                                        <select 
+                                            className="bg-white border border-slate-300 text-slate-700 text-sm font-bold px-4 py-2 rounded-lg shadow-sm outline-none focus:border-blue-500 cursor-pointer"
+                                            value={filtroMes}
+                                            onChange={e => setFiltroMes(e.target.value)}
+                                        >
+                                            <option value="TODOS">📅 Todo o Período</option>
+                                            {mesesDisponiveis.map(m => (
+                                                <option key={m} value={m}>{m.split('-').reverse().join('/')}</option>
+                                            ))}
+                                        </select>
+                                        {isGlobal && (
+                                            <div className="flex gap-2">
+                                                <button onClick={exportarBackup} className="bg-white border border-slate-300 text-slate-700 text-xs font-bold px-4 py-2 rounded-lg shadow-sm hover:bg-slate-50 transition">📥 Exportar JSON</button>
+                                                <label className="bg-white border border-slate-300 text-slate-700 text-xs font-bold px-4 py-2 rounded-lg shadow-sm hover:bg-slate-50 cursor-pointer transition">
+                                                    📤 Restaurar <input type="file" accept=".json" className="hidden" onChange={importarBackup} />
+                                                </label>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {isGlobal && painelRisco && (painelRisco.critico > 0 || painelRisco.atencao > 0) && (
@@ -1022,7 +1045,7 @@
                                     {isGlobal ? (
                                         <>
                                             <KPICard icon="📈" title="Custo Médio / KM" value={`R$ ${custoKmGlobal}`} subtitle="Despesa Total ÷ KM Percorrido" colorClass="bg-emerald-50 text-emerald-600" />
-                                            <KPICard icon="🚘" title="Frota Ativa" value={veiculos.length} subtitle={`${rotas.filter(r=>r.status==='Pendente').length} viagens a decorrer`} colorClass="bg-indigo-50 text-indigo-600" />
+                                            <KPICard icon="🚘" title="Frota Ativa" value={veiculos.length} subtitle={`${rotasDashboard.filter(r=>r.status==='Pendente').length} viagens a decorrer`} colorClass="bg-indigo-50 text-indigo-600" />
                                         </>
                                     ) : (
                                         <>
@@ -1061,7 +1084,7 @@
                                     {dataEvolucaoCategoriaMensal && (
                                         <div className="bg-white p-6 rounded-2xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-100 flex flex-col justify-between glass-card min-h-[300px]">
                                             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-2">
-                                                <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mt-1">Gastos por Categoria</h3>
+                                                <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mt-1">Gastos por Categoria (Mês a Mês)</h3>
                                                 <select 
                                                     className="text-[10px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-2 outline-none cursor-pointer focus:border-blue-400 w-full sm:w-auto shadow-sm"
                                                     value={filtroCatEvolucao}
@@ -1133,7 +1156,6 @@
                         {!showCadastro && !showCadastroFunc && veiculos.length > 0 && view !== 'dashboard' && (!isGlobal || view === 'historico') && (
                             <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200 animate-fade-in max-w-4xl mx-auto">
                                 
-                                {/* MÓDULO: ROTAS */}
                                 {view === 'rotas' && !isGlobal && (
                                     <div className="space-y-6">
                                         {userRole === 'GESTOR' && execucaoRota === null && (
@@ -1657,7 +1679,6 @@
                                                 </div>
                                             ) : (
                                                 (() => {
-                                                    // Agrupar as despesas por Categoria
                                                     const despesasAgrupadas = despesasFiltradas.reduce((acc, d) => {
                                                         const cat = d.categoria || 'Outros';
                                                         if (!acc[cat]) acc[cat] = [];
@@ -1671,7 +1692,6 @@
                                                         const corBarra = categoria.includes('Abastecimento') ? 'bg-blue-500' : categoria.includes('Manutenção') ? 'bg-amber-500' : 'bg-emerald-500';
 
                                                         return (
-                                                            // A palavra "open" foi removida da linha abaixo
                                                             <details key={categoria} className="bg-transparent mb-6 group/cat">
                                                                 <summary className="bg-slate-800 text-white p-4 rounded-2xl cursor-pointer flex justify-between items-center shadow-md hover:bg-slate-700 transition outline-none select-none">
                                                                     <div className="flex items-center gap-3">
@@ -1799,8 +1819,6 @@
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        
-        // Renderiza o aplicativo protegido pelo Error Boundary (Anti-Crash)
         root.render(
             <ErrorBoundary>
                 <ControleFrotaMulti />
@@ -1819,3 +1837,4 @@
     </script>
 </body>
 </html>
+        
