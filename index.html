@@ -144,7 +144,7 @@
         // APLICAÇÃO PRINCIPAL
         // =======================================================
         function ControleFrotaMulti() {
-            // 1. ESTADOS BÁSICOS
+            // 1. ESTADOS BÁSICOS E MEMÓRIA DE EXCLUSÃO (NOVO)
             const [userRole, setUserRole] = useState(null); 
             const [veiculos, setVeiculos] = useState([]);
             const [veiculoAtivo, setVeiculoAtivo] = useState('TODOS'); 
@@ -152,6 +152,9 @@
             const [lembretes, setLembretes] = useState([]);
             const [rotas, setRotas] = useState([]);
             const [funcionarios, setFuncionarios] = useState([]);
+            
+            // Registo de itens eliminados localmente para não os ressuscitar na mesclagem
+            const [deletedKeys, setDeletedKeys] = useState({ veiculos: [], despesas: [], rotas: [], lembretes: [], funcionarios: [] });
             
             const [view, setView] = useState('dashboard');
             const [showCadastro, setShowCadastro] = useState(false);
@@ -167,7 +170,6 @@
             const [filtroCatEvolucao, setFiltroCatEvolucao] = useState('TODAS');
             const [filtroMes, setFiltroMes] = useState('TODOS');
 
-            // Formulários e Estados de Edição
             const [novoVeiculo, setNovoVeiculo] = useState({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
             const [editingVeicPlaca, setEditingVeicPlaca] = useState(null);
             
@@ -181,7 +183,7 @@
             const [execucaoRota, setExecucaoRota] = useState(null);
 
             // ==========================================
-            // EFEITOS E NUVEM
+            // EFEITOS DE ARRANQUE E NUVEM
             // ==========================================
             const carregarDaNuvem = async () => {
                 setSyncStatus('A puxar dados...');
@@ -216,13 +218,13 @@
             useEffect(() => {
                 if ((view === 'os' || view === 'abastecimento' || view === 'despesaGeral') && editingDespesaIndex === null && veiculoAtivo !== 'TODOS') {
                     const rascunhoStr = localStorage.getItem('rubi_frota_rascunho_despesa');
-                    if (rascunhoStr) {
-                        try { const parsed = JSON.parse(rascunhoStr); if (parsed.view === view && parsed.veiculo === veiculoAtivo) setNovaDespesa(parsed.despesa); } catch(e){}
-                    }
+                    if (rascunhoStr) { try { const parsed = JSON.parse(rascunhoStr); if (parsed.view === view && parsed.veiculo === veiculoAtivo) setNovaDespesa(parsed.despesa); } catch(e){} }
                 }
             }, [view, veiculoAtivo, editingDespesaIndex]);
 
-            // 2. VARIÁVEIS BASE PARA FILTRAGEM
+            // ==========================================
+            // VARIÁVEIS BASE PARA FILTRAGEM
+            // ==========================================
             const isGlobal = veiculoAtivo === 'TODOS';
             const veiculoAtual = isGlobal ? null : veiculos.find(v => v.placa === veiculoAtivo);
             const kmAtualNum = veiculoAtual ? parseFloat(veiculoAtual.kmAtual) || 0 : 0;
@@ -291,20 +293,16 @@
                 const lembretesDoVeiculo = lembretes.filter(l => l.placa === placa);
                 if (lembretesDoVeiculo.length === 0) return 'OK';
                 let temCritico = false; let temAviso = false;
-                lembretesDoVeiculo.forEach(l => {
-                    const st = checkStatusLembrete(l);
-                    if (st.critico) temCritico = true;
-                    if (st.icone === '⚠️' || st.icone === '📅') temAviso = true;
-                });
+                lembretesDoVeiculo.forEach(l => { const st = checkStatusLembrete(l); if (st.critico) temCritico = true; if (st.icone === '⚠️' || st.icone === '📅') temAviso = true; });
                 if (temCritico) return 'CRITICO';
                 if (temAviso) return 'AVISO';
                 return 'OK';
             };
+
             // ==========================================
             // 3. CÁLCULOS DE BUSINESS INTELLIGENCE (BI)
             // ==========================================
             const coresGrafico = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#0ea5e9'];
-            
             const totalGasto = useMemo(() => despesasIniciais.reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0), [despesasIniciais]);
             
             const custoKmGlobal = useMemo(() => {
@@ -325,10 +323,7 @@
 
             const painelRisco = useMemo(() => {
                 let critico = 0, atencao = 0;
-                lembretes.forEach(l => {
-                    const st = checkStatusLembrete(l);
-                    if (st.critico) critico++; else if (st.icone === '⚠️' || st.icone === '📅') atencao++;
-                });
+                lembretes.forEach(l => { const st = checkStatusLembrete(l); if (st.critico) critico++; else if (st.icone === '⚠️' || st.icone === '📅') atencao++; });
                 return { critico, atencao };
             }, [lembretes, veiculos]);
 
@@ -350,10 +345,7 @@
 
             const statsPrevCorr = useMemo(() => {
                 let prev = 0, corr = 0;
-                despesasIniciais.forEach(d => {
-                    if (d.tipoOS === 'Preventiva') prev += (parseFloat(d.valor) || 0);
-                    if (d.tipoOS === 'Corretiva') corr += (parseFloat(d.valor) || 0);
-                });
+                despesasIniciais.forEach(d => { if (d.tipoOS === 'Preventiva') prev += (parseFloat(d.valor) || 0); if (d.tipoOS === 'Corretiva') corr += (parseFloat(d.valor) || 0); });
                 if (prev === 0 && corr === 0) return null;
                 return { prev, corr };
             }, [despesasIniciais]);
@@ -362,8 +354,7 @@
                 if (!isGlobal) return null;
                 let interna = 0, externa = 0;
                 despesasIniciais.filter(d => String(d.categoria).includes('Mecânica')).forEach(d => {
-                    if (d.localOS === 'Interna') interna += (parseFloat(d.valor) || 0);
-                    if (d.localOS === 'Externa') externa += (parseFloat(d.valor) || 0);
+                    if (d.localOS === 'Interna') interna += (parseFloat(d.valor) || 0); if (d.localOS === 'Externa') externa += (parseFloat(d.valor) || 0);
                 });
                 if (interna === 0 && externa === 0) return null;
                 return { interna, externa };
@@ -387,8 +378,7 @@
                         const p = dataBruta.split('/');
                         if(p.length === 3) {
                             const ano = p[2].length === 2 ? `20${p[2]}` : p[2];
-                            const dateRota = new Date(`${ano}-${p[1]}-${p[0]}T12:00:00`);
-                            if (dateRota >= limite) veiculosComRota.add(r.placa);
+                            if (new Date(`${ano}-${p[1]}-${p[0]}T12:00:00`) >= limite) veiculosComRota.add(r.placa);
                         }
                     } else if (dataBruta.includes('-')) {
                         if (new Date(dataBruta) >= limite) veiculosComRota.add(r.placa);
@@ -400,7 +390,7 @@
             const statsDiasOperacao = useMemo(() => {
                 if (isGlobal) return null;
                 const diasRod = new Set();
-                rotasDashboard.filter(r => r.status === 'Concluída' && (r.dataInicial || r.data)).forEach(r => diasRod.add(String(r.dataInicial || r.data).split(' ')[0]));
+                rotasDashboard.filter(r => r.placa === veiculoAtivo && r.status === 'Concluída' && (r.dataInicial || r.data)).forEach(r => diasRod.add(String(r.dataInicial || r.data).split(' ')[0]));
                 const diasOfi = new Set();
                 despesasIniciais.filter(d => String(d.categoria).includes('Mecânica') && d.data).forEach(d => diasOfi.add(d.data));
                 if (diasRod.size === 0 && diasOfi.size === 0) return null;
@@ -480,38 +470,22 @@
                 return { labels: sortedKeys, datasets: [{ label: 'Gasto (R$)', data: sortedKeys.map(k => map[k]), backgroundColor: '#3b82f6', borderRadius: 6 }] };
             }, [despesasIniciais]);
 
-            // NOVO: GRÁFICO INTERATIVO EVOLUÇÃO POR CATEGORIAS
             const dataEvolucaoCategoriaMensal = useMemo(() => {
-                const map = {};
-                const categoriasSet = new Set();
-                
+                const map = {}; const categoriasSet = new Set();
                 despesasIniciais.forEach(d => {
                     if(d.data && typeof d.data === 'string') {
-                        const mes = d.data.substring(0, 7);
-                        const cat = String(d.categoria || 'Outros');
-                        
-                        if (!map[mes]) map[mes] = {};
-                        map[mes][cat] = (map[mes][cat] || 0) + (parseFloat(d.valor) || 0);
-                        categoriasSet.add(cat);
+                        const mes = d.data.substring(0, 7); const cat = String(d.categoria || 'Outros');
+                        if (!map[mes]) map[mes] = {}; map[mes][cat] = (map[mes][cat] || 0) + (parseFloat(d.valor) || 0); categoriasSet.add(cat);
                     }
                 });
-                
                 const labels = Object.keys(map).sort();
                 if (labels.length === 0) return null;
-                
-                let categorias = Array.from(categoriasSet).sort();
-                const todasAsCategorias = [...categorias];
-                
+                let categorias = Array.from(categoriasSet).sort(); const todasAsCategorias = [...categorias];
                 if (filtroCatEvolucao !== 'TODAS') { categorias = categorias.filter(c => c === filtroCatEvolucao); }
                 const cores = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#64748b'];
-                
                 const datasets = categorias.map((cat) => ({
-                    label: cat,
-                    data: labels.map(mes => map[mes][cat] || 0),
-                    backgroundColor: cores[todasAsCategorias.indexOf(cat) % cores.length],
-                    borderRadius: 4
+                    label: cat, data: labels.map(mes => map[mes][cat] || 0), backgroundColor: cores[todasAsCategorias.indexOf(cat) % cores.length], borderRadius: 4
                 }));
-                
                 return { labels, datasets, categoriasDisponiveis: todasAsCategorias };
             }, [despesasIniciais, filtroCatEvolucao]);
 
@@ -525,8 +499,7 @@
                         if (parteData.includes('/')) {
                             const p = parteData.split('/');
                             if (p.length === 3) {
-                                const ano = p[2].length === 2 ? `20${p[2]}` : p[2];
-                                const mes = `${ano}-${p[1]}`;
+                                const ano = p[2].length === 2 ? `20${p[2]}` : p[2]; const mes = `${ano}-${p[1]}`;
                                 const dist = Math.max(0, (parseFloat(r.kmFinal)||0) - (parseFloat(r.kmInicial)||0)) || 0;
                                 if (dist > 0) map[mes] = (map[mes] || 0) + dist;
                             }
@@ -550,14 +523,10 @@
                 rotasDashboard.filter(r => r.status === 'Concluída' && r.kmFinal && r.kmInicial).forEach(r => {
                     const dataBruta = String(r.dataInicial || r.data || "");
                     if(dataBruta) {
-                        const parteData = dataBruta.split(' ')[0];
-                        let mes = null;
+                        const parteData = dataBruta.split(' ')[0]; let mes = null;
                         if (parteData.includes('/')) {
-                            const p = parteData.split('/');
-                            if (p.length === 3) mes = `${p[2].length === 2 ? `20${p[2]}` : p[2]}-${p[1]}`;
-                        } else if (parteData.includes('-')) {
-                            mes = parteData.substring(0, 7);
-                        }
+                            const p = parteData.split('/'); if (p.length === 3) mes = `${p[2].length === 2 ? `20${p[2]}` : p[2]}-${p[1]}`;
+                        } else if (parteData.includes('-')) { mes = parteData.substring(0, 7); }
                         if (mes) {
                             const dist = Math.max(0, (parseFloat(r.kmFinal)||0) - (parseFloat(r.kmInicial)||0)) || 0;
                             if (dist > 0) kmMap[mes] = (kmMap[mes] || 0) + dist;
@@ -571,23 +540,61 @@
             }, [despesasIniciais, rotasDashboard, veiculoAtivo, isGlobal]);
 
             // ==========================================
-            // FUNÇÕES GERAIS E INTEGRAÇÃO DE NUVEM
+            // NOVO: MOTOR DE SINCRONIZAÇÃO ANTI-CONFLITOS
             // ==========================================
-            const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios) => {
-                setSyncStatus('A guardar...');
-                localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots, funcionarios: funcs }));
+            const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios, dKeys = deletedKeys) => {
+                setSyncStatus('A verificar conflitos...');
                 try {
-                    const response = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'sincronizar', veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots, funcionarios: funcs }) });
-                    const result = await response.json();
-                    if (result.status === 'sucesso') setSyncStatus('Sincronizado'); else setSyncStatus('Erro Sync');
-                } catch (error) { setSyncStatus('Modo Offline'); }
+                    // 1. Puxa os dados atualizados primeiro para não esmagar o trabalho de outros
+                    const getResp = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'carregar' }) });
+                    const cloud = await getResp.json();
+                    
+                    let finalVeics = veics, finalDesps = desps, finalLembs = lembs, finalRots = rots, finalFuncs = funcs;
+
+                    if (cloud.status === 'sucesso' && cloud.dados) {
+                        // Função inteligente que funde os arrays e protege itens apagados pelo utilizador atual
+                        const mergeSeguro = (local, nuvem, chave, tipoDel) => {
+                            const localKeys = new Set(local.map(i => String(i[chave])));
+                            const deletados = new Set(dKeys[tipoDel].map(String));
+                            const faltantesDaNuvem = (nuvem || []).filter(i => !localKeys.has(String(i[chave])) && !deletados.has(String(i[chave])));
+                            return [...local, ...faltantesDaNuvem];
+                        };
+
+                        const hashD = d => d.id || `${d.data}_${d.valor}_${d.placa}`;
+                        const mergeDespesas = (local, nuvem) => {
+                            const localKeys = new Set(local.map(hashD));
+                            const deletados = new Set(dKeys.despesas.map(String));
+                            const faltantesDaNuvem = (nuvem || []).filter(d => !localKeys.has(hashD(d)) && !deletados.has(hashD(d)));
+                            return [...local, ...faltantesDaNuvem];
+                        };
+
+                        finalVeics = mergeSeguro(veics, cloud.dados.veiculos, 'placa', 'veiculos');
+                        finalRots = mergeSeguro(rots, cloud.dados.rotas, 'id', 'rotas');
+                        finalLembs = mergeSeguro(lembs, cloud.dados.lembretes, 'id', 'lembretes');
+                        finalFuncs = mergeSeguro(funcs, cloud.dados.funcionarios, 'nome', 'funcionarios');
+                        finalDesps = mergeDespesas(desps, cloud.dados.despesas);
+                    }
+
+                    // 2. Grava localmente e empurra para a nuvem a fusão perfeita dos dados
+                    setSyncStatus('A gravar...');
+                    localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: finalVeics, despesas: finalDesps, lembretes: finalLembs, rotas: finalRots, funcionarios: finalFuncs }));
+                    
+                    const pushResp = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'sincronizar', veiculos: finalVeics, despesas: finalDesps, lembretes: finalLembs, rotas: finalRots, funcionarios: finalFuncs }) });
+                    const result = await pushResp.json();
+                    
+                    if (result.status === 'sucesso') {
+                        setSyncStatus('Sincronizado');
+                        setVeiculos(finalVeics); setDespesas(finalDesps); setLembretes(finalLembs); setRotas(finalRots); setFuncionarios(finalFuncs);
+                    } else { setSyncStatus('Erro Sync'); }
+                } catch (error) { 
+                    setSyncStatus('Modo Offline'); 
+                    localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots, funcionarios: funcs }));
+                }
             };
 
             const exportarBackup = () => {
-                const dados = { veiculos, despesas, lembretes, rotas, funcionarios };
-                const blob = new Blob([JSON.stringify(dados)], {type: "application/json"});
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a'); a.href = url; a.download = `Backup_RUBI_FROTA_${new Date().toISOString().split('T')[0]}.json`; a.click();
+                const blob = new Blob([JSON.stringify({ veiculos, despesas, lembretes, rotas, funcionarios })], {type: "application/json"});
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Backup_RUBI_FROTA_${new Date().toISOString().split('T')[0]}.json`; a.click();
             };
 
             const importarBackup = (e) => {
@@ -614,7 +621,7 @@
             };
 
             // ==========================================
-            // GESTÃO DE EQUIPA (CRIAR E EDITAR)
+            // GESTÃO DE EQUIPA E VEÍCULOS 
             // ==========================================
             const handleAddFuncionario = () => {
                 if (!novoFuncionario.nome) return alert('O nome do colaborador é obrigatório!');
@@ -636,31 +643,24 @@
                 setEditingFuncNome(null);
             };
 
-            const editarFuncionario = (func) => {
-                setNovoFuncionario(func);
-                setEditingFuncNome(func.nome);
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            };
+            const editarFuncionario = (func) => { setNovoFuncionario(func); setEditingFuncNome(func.nome); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
             const removerFuncionario = (nome) => {
                 if(confirm(`Deseja remover ${nome} da equipa?`)) {
                     const novosFuncs = funcionarios.filter(f => f.nome !== nome);
-                    setFuncionarios(novosFuncs); salvarNaNuvem(veiculos, despesas, lembretes, rotas, novosFuncs);
+                    const novasDel = { ...deletedKeys, funcionarios: [...deletedKeys.funcionarios, nome] };
+                    setDeletedKeys(novasDel); setFuncionarios(novosFuncs); 
+                    salvarNaNuvem(veiculos, despesas, lembretes, rotas, novosFuncs, novasDel);
                     if (editingFuncNome === nome) { setNovoFuncionario({ nome: '', cargo: 'Motorista' }); setEditingFuncNome(null); }
                 }
             };
 
-            // ==========================================
-            // GESTÃO DE VEÍCULOS (CRIAR E EDITAR)
-            // ==========================================
             const handleAddVeiculo = () => {
                 if (!novoVeiculo.veiculo || !novoVeiculo.placa) return alert('Veículo e Matrícula/Placa são obrigatórios!');
                 const placaUpper = novoVeiculo.placa.toUpperCase();
                 let novosVeiculos;
                 if (editingVeicPlaca) {
-                    if (placaUpper !== editingVeicPlaca && veiculos.find(v => v.placa === placaUpper)) {
-                        return alert('Já existe outra viatura registada com esta matrícula!');
-                    }
+                    if (placaUpper !== editingVeicPlaca && veiculos.find(v => v.placa === placaUpper)) return alert('Matrícula já registada!');
                     novosVeiculos = veiculos.map(v => v.placa === editingVeicPlaca ? { ...novoVeiculo, placa: placaUpper } : v);
                     alert('✅ Viatura atualizada com sucesso!');
                 } else {
@@ -668,23 +668,19 @@
                     novosVeiculos = [...veiculos, { ...novoVeiculo, placa: placaUpper }];
                     alert('✅ Nova viatura registada!');
                 }
-                setVeiculos(novosVeiculos); 
-                salvarNaNuvem(novosVeiculos, despesas, lembretes, rotas);
+                setVeiculos(novosVeiculos); salvarNaNuvem(novosVeiculos, despesas, lembretes, rotas);
                 setNovoVeiculo({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' });
                 setEditingVeicPlaca(null);
             };
 
-            const editarVeiculo = (veic) => {
-                setNovoVeiculo(veic);
-                setEditingVeicPlaca(veic.placa);
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            };
+            const editarVeiculo = (veic) => { setNovoVeiculo(veic); setEditingVeicPlaca(veic.placa); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
             const removerVeiculo = (placa) => {
                 if(confirm(`ATENÇÃO: Deseja excluir a viatura ${placa} permanentemente?`)) {
                     const novosVeiculos = veiculos.filter(v => v.placa !== placa);
-                    setVeiculos(novosVeiculos); 
-                    salvarNaNuvem(novosVeiculos, despesas, lembretes, rotas);
+                    const novasDel = { ...deletedKeys, veiculos: [...deletedKeys.veiculos, placa] };
+                    setDeletedKeys(novasDel); setVeiculos(novosVeiculos); 
+                    salvarNaNuvem(novosVeiculos, despesas, lembretes, rotas, funcionarios, novasDel);
                     if (veiculoAtivo === placa) setVeiculoAtivo('TODOS');
                     if (editingVeicPlaca === placa) { setNovoVeiculo({ veiculo: '', placa: '', motorista: '', centroCusto: '', kmAtual: '' }); setEditingVeicPlaca(null); }
                 }
@@ -698,8 +694,8 @@
             const handleAddDespesa = () => {
                 if (isGlobal) return alert('Selecione uma viatura específica.');
                 let valorFinal = novaDespesa.valor; let descricaoFinal = novaDespesa.descricao;
-                if (view === 'abastecimento') {
-                    if (novaDespesa.litros && novaDespesa.precoLitro) { const resumo = `[${novaDespesa.litros}L a R$${novaDespesa.precoLitro}/L]`; descricaoFinal = descricaoFinal ? `${resumo} ${descricaoFinal}` : resumo; }
+                if (view === 'abastecimento' && novaDespesa.litros && novaDespesa.precoLitro) { 
+                    const resumo = `[${novaDespesa.litros}L a R$${novaDespesa.precoLitro}/L]`; descricaoFinal = descricaoFinal ? `${resumo} ${descricaoFinal}` : resumo; 
                 }
                 if (view === 'os') {
                     const totalOS = (parseFloat(novaDespesa.valorMaoObra) || 0) + (parseFloat(novaDespesa.valorPecas) || 0);
@@ -734,7 +730,10 @@
             const removerDespesa = (despesa) => {
                 if(confirm("Deseja eliminar este registo?")) {
                     const novasDespesas = despesas.filter(d => d !== despesa);
-                    setDespesas(novasDespesas); salvarNaNuvem(veiculos, novasDespesas, lembretes, rotas);
+                    const hash = despesa.id || `${despesa.data}_${despesa.valor}_${despesa.placa}`;
+                    const novasDel = { ...deletedKeys, despesas: [...deletedKeys.despesas, hash] };
+                    setDeletedKeys(novasDel); setDespesas(novasDespesas); 
+                    salvarNaNuvem(veiculos, novasDespesas, lembretes, rotas, funcionarios, novasDel);
                 }
             };
 
@@ -746,8 +745,7 @@
                     return new Promise((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onload = event => {
-                            const isPDF = file.type === 'application/pdf';
-                            if (isPDF) {
+                            if (file.type === 'application/pdf') {
                                 fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'upload_imagem', base64: event.target.result, nomeArquivo: `DOC_${Date.now()}.pdf`, mimeType: 'application/pdf' }) })
                                 .then(res => res.json()).then(result => { if (result.status === 'sucesso') resolve(result.url); else reject(); }).catch(() => reject());
                             } else {
@@ -768,7 +766,7 @@
                 try {
                     const uploadedUrls = await Promise.all(uploadPromises);
                     setNovaDespesa(prev => ({ ...prev, anexos: [...(Array.isArray(prev.anexos)?prev.anexos:[]), ...uploadedUrls] }));
-                } catch (err) { setFormError('Erro ao carregar ficheiro. Tente novamente.'); } finally { setIsUploading(false); }
+                } catch (err) { setFormError('Erro ao carregar ficheiro.'); } finally { setIsUploading(false); }
             };
 
             const handleAddLembrete = () => {
@@ -782,7 +780,9 @@
             const removerLembrete = (id) => {
                 if(confirm("Eliminar alerta?")) {
                     const novosLembretes = lembretes.filter(l => l.id !== id);
-                    setLembretes(novosLembretes); salvarNaNuvem(veiculos, despesas, novosLembretes, rotas);
+                    const novasDel = { ...deletedKeys, lembretes: [...deletedKeys.lembretes, id] };
+                    setDeletedKeys(novasDel); setLembretes(novosLembretes); 
+                    salvarNaNuvem(veiculos, despesas, novosLembretes, rotas, funcionarios, novasDel);
                 }
             };
 
@@ -839,10 +839,11 @@
             const removerRota = (id) => {
                 if(confirm(`Deseja excluir / cancelar esta rota?`)) {
                     const novasRotas = rotas.filter(r => r.id !== id);
-                    setRotas(novasRotas); salvarNaNuvem(veiculos, despesas, lembretes, novasRotas);
+                    const novasDel = { ...deletedKeys, rotas: [...deletedKeys.rotas, id] };
+                    setDeletedKeys(novasDel); setRotas(novasRotas); 
+                    salvarNaNuvem(veiculos, despesas, lembretes, novasRotas, funcionarios, novasDel);
                 }
             };
-
             const generatePDF = () => {
                 setIsGenerating(true);
                 const mainUi = document.getElementById('main-ui');
