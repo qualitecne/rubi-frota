@@ -1265,6 +1265,7 @@ const dataConsumo = useMemo(() => {
                                                 data={dataEvolucaoCategoriaMensal} 
                                                 options={{ plugins: { legend: { display: filtroCatEvolucao === 'TODAS', position: 'bottom', labels: { boxWidth: 12, font: {size: 10} } } }, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' } } } }} 
                                             />
+                                            <p className="text-[10px] text-slate-500 mt-4 pt-3 border-t border-slate-100 font-medium leading-relaxed whitespace-pre-wrap">Apresenta a evolução financeira mensal da frota, segmentando os custos por categoria (combustível, manutenção, pneus, seguros, pedágios, multas, documentação, entre outros). Permite analisar tendências de gastos, identificar aumentos inesperados e apoiar decisões para redução de custos operacionais.</p>
                                         </div>
                                     )}
 
