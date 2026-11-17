@@ -375,6 +375,37 @@
                 return { labels: sorted.map(i => i[0]), datasets: [{ label: 'Total Pago (R$)', data: sorted.map(i => i[1]), backgroundColor: '#0ea5e9', borderRadius: 4 }] };
             }, [despesasIniciais, isGlobal]);
 
+            const dataEvolucaoCategoriaMensal = useMemo(() => {
+                const map = {};
+                const categoriasSet = new Set();
+                
+                despesasIniciais.forEach(d => {
+                    if(d.data && typeof d.data === 'string') {
+                        const mes = d.data.substring(0, 7); // Extrai apenas YYYY-MM
+                        const cat = String(d.categoria || 'Outros');
+                        
+                        if (!map[mes]) map[mes] = {};
+                        map[mes][cat] = (map[mes][cat] || 0) + (parseFloat(d.valor) || 0);
+                        categoriasSet.add(cat);
+                    }
+                });
+                
+                const labels = Object.keys(map).sort();
+                if (labels.length === 0) return null;
+                
+                const categorias = Array.from(categoriasSet).sort();
+                const cores = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#64748b'];
+                
+                const datasets = categorias.map((cat, i) => ({
+                    label: cat,
+                    data: labels.map(mes => map[mes][cat] || 0),
+                    backgroundColor: cores[i % cores.length],
+                    borderRadius: 4
+                }));
+                
+                return { labels, datasets };
+            }, [despesasIniciais]);
+            
             const dataEvolucaoMensal = useMemo(() => {
                 const map = {};
                 despesasIniciais.forEach(d => {
