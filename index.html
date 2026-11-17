@@ -913,19 +913,7 @@ const dataConsumo = useMemo(() => {
                 }).catch(() => setIsGenerating(false));
             };
 
-           const renderSeletorVeiculoGlobal = () => {
-                if (!isGlobal) return null;
-                return (
-                    <div className="mb-6 bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-700">
-                        <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wide block mb-2">🚘 Viatura a Receber o Registo</label>
-                        <select className="w-full border-0 p-3 rounded-lg text-sm font-bold text-slate-800 bg-white outline-none focus:ring-2 focus:ring-blue-500 shadow-inner cursor-pointer" value={novaDespesa.placa || ''} onChange={e => setNovaDespesa({...novaDespesa, placa: e.target.value, rotaVinculada: ''})}>
-                            <option value="" disabled>-- Clique para Escolher a Viatura --</option>
-                            {veiculos.map(v => <option key={v.placa} value={v.placa}>{v.placa} - {v.veiculo}</option>)}
-                        </select>
-                    </div>
-                );
-            };
-
+           
             // Preparação dos Filtros Visuais de Tabelas
             const despesasFiltradas = despesasIniciais.filter(d => 
                 (d.categoria && String(d.categoria).toLowerCase().includes(searchTerm.toLowerCase())) || 
@@ -950,21 +938,7 @@ const renderSeletorVeiculoGlobal = () => {
                 );
             };
 
-            const renderSelectRota = () => (
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl mt-3">
-                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-2">🛣️ Vincular a uma Viagem (Opcional)</label>
-                    <select className="w-full border border-slate-300 p-2 rounded-lg text-sm bg-white outline-none focus:border-blue-500" value={novaDespesa.rotaVinculada || ''} onChange={e => setNovaDespesa({...novaDespesa, rotaVinculada: e.target.value})}>
-                        <option value="">-- Sem vínculo específico --</option>
-                        {rotasParaVincular.map(r => (
-                            <option key={r.id} value={r.id}>
-                                {r.status === 'Pendente' ? '⏳' : '✅'} {r.status === 'Pendente' ? '(Pendente)' : `[${r.id}]`} {r.origem} ➔ {r.destino}
-                            </option>
-                        ))}
-                    </select>
-                    <p className="text-[10px] text-slate-400 mt-1">Ligue esta despesa a uma viagem para calcular o lucro total do frete.</p>
-                </div>
-            );
-            
+                       
             if (!userRole) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-[#0f172a] p-6 animate-fade-in">
