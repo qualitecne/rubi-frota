@@ -898,19 +898,101 @@ const dataConsumo = useMemo(() => {
                 }
             };
             const generatePDF = () => {
-                setIsGenerating(true);
-                const mainUi = document.getElementById('main-ui');
-                const pdfContent = document.getElementById('pdf-content');
-                mainUi.style.display = 'none';
-                pdfContent.style.display = 'block';
-                window.scrollTo(0, 0);
-                const filename = isGlobal ? `Relatorio_RUBI_FROTA_Global.pdf` : `Dossie_${veiculoAtual ? veiculoAtual.placa : 'Veiculo'}.pdf`;
-                const opt = { margin: [5, 5, 10, 5], filename: filename, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
-                window.html2pdf().set(opt).from(pdfContent).save().then(() => {
-                    mainUi.style.display = 'block';
-                    pdfContent.style.display = 'none';
-                    setIsGenerating(false);
-                }).catch(() => setIsGenerating(false));
+                const printWindow = window.open('', '_blank');
+                
+                // Agrupar despesas por categoria
+                const despesasAgrupadas = {};
+                despesasIniciais.forEach(d => {
+                    const cat = d.categoria || 'Outros';
+                    if(!despesasAgrupadas[cat]) despesasAgrupadas[cat] = [];
+                    despesasAgrupadas[cat].push(d);
+                });
+                
+                let tableHTML = `
+                    <html>
+                    <head>
+                        <title>Relatório Financeiro - RUBI FROTA</title>
+                        <style>
+                            body { font-family: 'Segoe UI', Arial, sans-serif; padding: 30px; color: #334155; }
+                            .header { text-align: center; margin-bottom: 40px; }
+                            h1 { color: #0f172a; margin-bottom: 5px; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
+                            p.subtitle { color: #64748b; font-size: 14px; margin-top: 0; }
+                            table { width: 100%; border-collapse: collapse; margin-bottom: 40px; font-size: 12px; }
+                            th { background-color: #f8fafc; color: #475569; font-weight: bold; text-align: left; padding: 12px; border-bottom: 2px solid #cbd5e1; text-transform: uppercase; font-size: 10px; }
+                            td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+                            .total-row { font-weight: bold; background-color: #f1f5f9; }
+                            .category-title { font-size: 16px; font-weight: bold; color: #1e293b; margin-bottom: 15px; border-left: 4px solid #3b82f6; padding-left: 10px; }
+                            .summary-box { margin-top: 40px; padding: 20px; background: #0f172a; color: white; border-radius: 8px; text-align: right; }
+                            .summary-box h2 { margin: 0; font-size: 22px; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <h1>Extrato de Despesas da Frota</h1>
+                            <p class="subtitle">Filtro de Viatura: <b>${veiculoAtivo}</b> | Filtro de Mês: <b>${filtroMes}</b></p>
+                        </div>
+                `;
+                
+                let totalGeral = 0;
+                
+                Object.keys(despesasAgrupadas).sort().forEach(cat => {
+                    tableHTML += `<div class="category-title">${cat}</div>`;
+                    tableHTML += `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th width="12%">Data</th>
+                                    <th width="15%">Viatura</th>
+                                    <th width="53%">Descrição / Fornecedor / Observações</th>
+                                    <th width="20%" style="text-align: right;">Valor (R$)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+                    
+                    let subTotal = 0;
+                    despesasAgrupadas[cat].forEach(d => {
+                        const val = parseFloat(d.valor) || 0;
+                        subTotal += val;
+                        const dataStr = d.data ? d.data.split('-').reverse().join('/') : '-';
+                        const forn = d.fornecedor ? ` <br><span style="color: #94a3b8; font-size: 10px;">Fornecedor: ${d.fornecedor}</span>` : '';
+                        const idDoc = d.nf ? ` <span style="color: #94a3b8; font-size: 10px;">| Doc: ${d.nf}</span>` : '';
+                        
+                        tableHTML += `
+                            <tr>
+                                <td>${dataStr}</td>
+                                <td><strong>${d.placa || '-'}</strong></td>
+                                <td>${d.descricao || '-'}${forn}${idDoc}</td>
+                                <td style="text-align: right; color: #0f172a; font-weight: 600;">R$ ${val.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    totalGeral += subTotal;
+                    tableHTML += `
+                                <tr class="total-row">
+                                    <td colspan="3" style="text-align: right; color: #64748b;">SUBTOTAL DA CATEGORIA:</td>
+                                    <td style="text-align: right; font-size: 14px; color: #3b82f6;">R$ ${subTotal.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    `;
+                });
+                
+                tableHTML += `
+                        <div class="summary-box">
+                            <p style="margin: 0 0 5px 0; font-size: 12px; color: #94a3b8; text-transform: uppercase;">Custo Total do Período Filtrado</p>
+                            <h2>R$ ${totalGeral.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h2>
+                        </div>
+                        <script>
+                            window.onload = function() { setTimeout(() => { window.print(); window.close(); }, 500); }
+                        </script>
+                    </body>
+                    </html>
+                `;
+                
+                printWindow.document.write(tableHTML);
+                printWindow.document.close();
             };
 
            
@@ -1233,12 +1315,16 @@ const renderSelectRota = () => (
                                     const faturamentoTotal = rotasDashboard.filter(r => r.status === 'Concluída').reduce((acc, curr) => acc + (parseFloat(curr.frete) || 0), 0);
                                     const lucroReal = faturamentoTotal - totalGasto;
                                     const viagensConcluidas = rotasDashboard.filter(r => r.status === 'Concluída').length;
-                                    const totalLitros = despesasIniciais.reduce((acc, d) => acc + (parseFloat(d.litros) || 0), 0);
+                                    // Leitura inteligente de litros (suporta registos novos e antigos)
+                                    const totalLitros = despesasIniciais.filter(d => d.categoria === 'Abastecimento').reduce((acc, d) => {
+                                        let l = parseFloat(d.litros);
+                                        if (isNaN(l) || l === 0) { const m = String(d.descricao || '').match(/\[(.*?)L a/); l = m ? parseFloat(m[1]) : 0; }
+                                        return acc + (l || 0);
+                                    }, 0);
                                     const kmsTotais = rotasDashboard.filter(r => r.status === 'Concluída').reduce((a, b) => a + (Math.max(0, (parseFloat(b.kmFinal)||0) - (parseFloat(b.kmInicial)||0)) || 0), 0);
                                     const consumoGeral = totalLitros > 0 ? (kmsTotais / totalLitros).toFixed(2) : '0.00';
                                     const margem = faturamentoTotal > 0 ? ((lucroReal / faturamentoTotal) * 100).toFixed(1) : '0.0';
 
-                                    // Novos Cálculos (Combustível, Oficina, Alertas)
                                     const custoCombustivel = despesasIniciais.filter(d => d.categoria === 'Abastecimento').reduce((acc, curr) => acc + (parseFloat(curr.valor) || 0), 0);
                                     const precoMedioCombustivel = totalLitros > 0 ? (custoCombustivel / totalLitros).toFixed(2) : '0.00';
                                     
@@ -1348,8 +1434,6 @@ const renderSelectRota = () => (
                                     {isGlobal && renderChartOrInsight(dataPorCategoria, 'doughnut', 'Aonde estamos gastando mais?')}
                                     {isGlobal && renderChartOrInsight(dataMediaCategoria, 'bar', 'Ticket Médio de cada Despesa', false, {indexAxis: 'y'})}
                                     {isGlobal && renderChartOrInsight(dataMediaKmDestino, 'bar', 'Média de KM por Destino', false, {indexAxis: 'y'})}
-                                    {isGlobal && renderChartOrInsight(dataCentroCusto, 'doughnut', 'Alocação por Centro de Custo')}
-                                    {isGlobal && renderChartOrInsight(dataRankingVeiculos, 'bar', 'Top 10 Custos por Viatura', false, {indexAxis: 'y'})}
                                     {isGlobal && renderChartOrInsight(dataTopFornecedores, 'bar', 'Top 5 Fornecedores (Negociação)', false, {indexAxis: 'y'})}
                                     {isGlobal && renderChartOrInsight(dataEvolucaoMensal, 'bar', 'Evolução Mensal de Gastos (Cashburn)', true)}
                                     {isGlobal && renderChartOrInsight(dataKmMensal, 'bar', 'Evolução de Produtividade (KM Rodado)', true)}
