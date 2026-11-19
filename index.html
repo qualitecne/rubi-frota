@@ -867,7 +867,7 @@ const dataConsumo = useMemo(() => {
                 localStorage.setItem('rubi_frota_lembretes', JSON.stringify(novosLembretes));
                 
                 // Limpa o formulário sem invocar variáveis inexistentes
-                setNovoLembrete({ tipo: '', tarefa: '', placa: '', kmVencimento: '', freqKm: '', ultimoKm: '', dataVencimento: '', periodoData: '', observacoes: '' });
+                setNovoLembrete({ tipo: '', tarefa: '', placa: '', kmVencimento: '', freqKm: '', ultimoKm: '', dataUltimoKm: '', dataVencimento: '', periodoData: '', observacoes: '' });
             };
 
             const removerLembrete = (id) => {
@@ -2006,45 +2006,62 @@ const renderSelectRota = () => (
                                                     <datalist id="opcoes-manutencao"><option value="Troca de Óleo e Filtro" /><option value="Alinhamento e Balanceamento" /><option value="Seguro/IPVA" /><option value="Revisão Pneus" /></datalist>
                                                 </div>
                                                 
-                                                <div className="bg-white/50 border border-blue-100 p-5 rounded-2xl mt-4">
-                                                    <h3 className="text-sm font-black text-blue-900 mb-4 flex items-center gap-2">⏱️ Regras de Vencimento <span className="text-[9px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full uppercase tracking-wider">O que ocorrer primeiro</span></h3>
+                                                <div className="bg-slate-50 border border-slate-200 p-5 rounded-2xl mt-4 mb-4">
+                                                    <h3 className="text-sm font-black text-slate-800 mb-4 flex items-center gap-2">⏱️ Regras de Vencimento</h3>
                                                     
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                        <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm flex flex-col gap-3">
+                                                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
                                                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block border-b border-slate-100 pb-1">🛣️ Vence por Quilometragem</label>
                                                             
-                                                            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-                                                               <span className="text-[9px] font-bold text-slate-500 uppercase block mb-2">Opção A: KM Exato (Alvo Único)</span>
-                                                                <div className="relative">
-                                                                    <input type="number" className="w-full border border-slate-300 p-2 pr-10 rounded text-sm outline-none focus:border-blue-500 bg-white" placeholder="Ex: 150000" value={novoLembrete.kmVencimento || ''} onChange={e => setNovoLembrete({...novoLembrete, kmVencimento: e.target.value, freqKm: '', ultimoKm: ''})} />
+                                                            {/* Formulário Opção A */}
+                                                            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 relative">
+                                                                <span className="text-[10px] font-black text-slate-700 uppercase block mb-2">🎯 Opção A: Alvo Único</span>
+                                                                <div className="relative mb-2">
+                                                                    <input type="number" className="w-full border border-slate-300 p-2 pr-10 rounded text-sm outline-none focus:border-blue-500 bg-white" placeholder="Ex: 150000" value={novoLembrete.kmVencimento || ''} onChange={e => setNovoLembrete({...novoLembrete, kmVencimento: e.target.value, freqKm: '', ultimoKm: '', dataUltimoKm: ''})} />
                                                                     <span className="absolute right-3 top-2 text-xs font-bold text-slate-400">KM</span>
                                                                 </div>
-                                                                <p className="text-[9px] text-slate-500 mt-2 leading-tight">⚠️ <span className="font-bold">Quando vencer:</span> Terá de digitar o novo limite final manualmente.</p>
+                                                                <div className="text-[9px] text-slate-600 leading-tight">
+                                                                    <strong className="block text-amber-600 mb-1">Quando trocar novamente:</strong>
+                                                                    1. Clica em Editar.<br/>2. Altera o alvo velho pelo novo.<br/>3. Salva.
+                                                                </div>
                                                             </div>
                                                             
+                                                            {/* Formulário Opção B */}
                                                             <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-                                                                <span className="text-[9px] font-bold text-slate-500 uppercase block mb-2">Opção B: Ciclo Contínuo (A cada X KM)</span>
-                                                                <div className="flex flex-col gap-2">
-                                                                    <input type="number" className="w-full border border-slate-300 p-2 rounded text-sm outline-none focus:border-blue-500 bg-white" placeholder="Avisar a cada X KM (ex: 10000)" value={novoLembrete.freqKm || ''} onChange={e => setNovoLembrete({...novoLembrete, freqKm: e.target.value, kmVencimento: ''})} />
-                                                                    <input type="number" className="w-full border border-slate-300 p-2 rounded text-sm outline-none focus:border-blue-500 bg-white" placeholder="Feito no KM (ex: 140000)" value={novoLembrete.ultimoKm || ''} onChange={e => setNovoLembrete({...novoLembrete, ultimoKm: e.target.value, kmVencimento: ''})} />
+                                                                <span className="text-[10px] font-black text-slate-700 uppercase block mb-2">♻️ Opção B: Ciclo Contínuo</span>
+                                                                <div className="flex flex-col gap-3">
+                                                                    <input type="number" className="w-full border border-slate-300 p-2 rounded text-sm outline-none focus:border-blue-500 bg-white" placeholder="Ciclo (Ex: 10000 KM)" value={novoLembrete.freqKm || ''} onChange={e => setNovoLembrete({...novoLembrete, freqKm: e.target.value, kmVencimento: ''})} />
+                                                                    <div className="bg-blue-50/50 p-2 rounded border border-blue-100">
+                                                                        <span className="text-[9px] font-bold text-blue-800 uppercase block mb-1">Quando fez o serviço?</span>
+                                                                        <div className="grid grid-cols-2 gap-2">
+                                                                            <input type="number" className="w-full border border-slate-300 p-2 rounded text-sm outline-none focus:border-blue-500 bg-white" placeholder="No KM (Ex: 140000)" value={novoLembrete.ultimoKm || ''} onChange={e => setNovoLembrete({...novoLembrete, ultimoKm: e.target.value, kmVencimento: ''})} />
+                                                                            <input type="date" className="w-full border border-slate-300 p-2 rounded text-sm outline-none focus:border-blue-500 bg-white" value={novoLembrete.dataUltimoKm || ''} onChange={e => setNovoLembrete({...novoLembrete, dataUltimoKm: e.target.value, kmVencimento: ''})} />
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
-                                                                <p className="text-[9px] text-blue-600 mt-2 leading-tight">♻️ <span className="font-bold">Quando vencer:</span> Basta clicar em Editar e atualizar o 'Feito no KM'.</p>
+                                                                <div className="text-[9px] text-slate-600 leading-tight mt-2">
+                                                                    <strong className="block text-blue-600 mb-1">Quando trocar novamente:</strong>
+                                                                    1. Clica em Editar.<br/>2. Troca o KM e a Data no bloco "Quando fez".<br/>3. Salva (ele recalcula sozinho).
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         
-                                                        <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm h-fit">
+                                                        {/* Formulário Data */}
+                                                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-fit">
                                                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-2 border-b border-slate-100 pb-1">📅 Vence por Data Exata</label>
                                                             <div className="space-y-3 mt-2">
                                                                 <input type="date" className="w-full border border-slate-300 p-3 rounded-lg text-sm outline-none focus:border-blue-500" value={novoLembrete.dataVencimento || ''} onChange={e => setNovoLembrete({...novoLembrete, dataVencimento: e.target.value, periodoData: ''})} />
                                                                 
-                                                                {/* Botões Inteligentes de Cálculo de Prazo */}
                                                                 <div className="flex gap-2">
                                                                     <button type="button" onClick={() => { const d = new Date(); d.setMonth(d.getMonth() + 3); setNovoLembrete({...novoLembrete, dataVencimento: d.toISOString().split('T')[0], periodoData: '3 Meses'}); }} className="flex-1 bg-slate-100 hover:bg-blue-100 text-blue-700 text-[10px] font-black py-2 rounded-lg transition border border-slate-200 hover:border-blue-300">+ 3 Meses</button>
                                                                     <button type="button" onClick={() => { const d = new Date(); d.setMonth(d.getMonth() + 6); setNovoLembrete({...novoLembrete, dataVencimento: d.toISOString().split('T')[0], periodoData: '6 Meses'}); }} className="flex-1 bg-slate-100 hover:bg-blue-100 text-blue-700 text-[10px] font-black py-2 rounded-lg transition border border-slate-200 hover:border-blue-300">+ 6 Meses</button>
                                                                     <button type="button" onClick={() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); setNovoLembrete({...novoLembrete, dataVencimento: d.toISOString().split('T')[0], periodoData: '1 Ano'}); }} className="flex-1 bg-slate-100 hover:bg-blue-100 text-blue-700 text-[10px] font-black py-2 rounded-lg transition border border-slate-200 hover:border-blue-300">+ 1 Ano</button>
                                                                 </div>
 
-                                                                <p className="text-[9px] text-slate-500 mt-2 leading-tight">💡 <span className="font-bold">Dica:</span> Clique num botão para calcular a data a partir de hoje, ou escolha no calendário manualmente.</p>
+                                                                <div className="text-[9px] text-slate-600 leading-tight bg-slate-50 p-2 rounded border border-slate-200 mt-2">
+                                                                    <strong className="block text-emerald-600 mb-1">Quando renovar novamente:</strong>
+                                                                    1. Clica em Editar.<br/>2. Clica num botão (ex: + 1 Ano).<br/>3. Salva.
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -2065,16 +2082,35 @@ const renderSelectRota = () => (
                                                                 <div className="flex items-center gap-4">
                                                                     <span className="text-3xl">{status.icone}</span>
                                                                     <div>
-                                                                        <p className="font-black text-slate-800 text-base leading-tight">
+                                                                        <p className="font-black text-slate-800 text-base leading-tight mb-2">
                                                                             {isGlobal && <span className="bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded tracking-wider mr-2 align-middle">{l.placa}</span>}
-                                                                            {l.tarefa || l.tipo}
+                                                                            ✅ {l.tarefa || l.tipo}
                                                                         </p>
-                                                                        <p className="text-[11px] text-slate-600 font-bold mt-1.5 mb-1.5 leading-relaxed">
-                                                                            {l.kmVencimento && <span className="block mb-1">🎯 Opção A: Alvo de {l.kmVencimento} KM</span>}
-                                                                            {l.dataVencimento && <span className="inline-block mr-3">📅 {l.periodoData ? `${l.periodoData} - ` : ''}Data Exata: {l.dataVencimento.split('-').reverse().join('/')}</span>}
-                                                                            {(l.freqKm || l.ultimoKm) && <span className="inline-block">♻️ Opção B: Ciclo de {l.freqKm || '?'} KM (Feito: {l.ultimoKm || '?'})</span>}
-                                                                        </p>
-                                                                        <p className={`text-xs font-black ${status.cor}`}>{status.msg}</p>
+                                                                        
+                                                                        <div className="text-[11.5px] text-slate-700 space-y-2 mb-2 font-medium">
+                                                                            {l.kmVencimento && (
+                                                                                <div>
+                                                                                    <span className="font-bold">▪️ KM:</span> 🎯 Opção A (Alvo Único) <br/>
+                                                                                    <span className="text-slate-500 ml-4">➔ Previsão no KM:</span> <span className="font-black">{l.kmVencimento}</span>
+                                                                                </div>
+                                                                            )}
+                                                                            
+                                                                            {(l.freqKm || l.ultimoKm) && (
+                                                                                <div>
+                                                                                    <span className="font-bold">▪️ KM:</span> ♻️ Ciclo de {l.freqKm || '?'} KM <br/>
+                                                                                    <span className="text-slate-500 ml-4">➔ Ultimo Realizado no KM:</span> <span className="font-black">{l.ultimoKm || '?'}</span> {l.dataUltimoKm && <span className="font-bold text-slate-600">({l.dataUltimoKm.split('-').reverse().join('/')})</span>}
+                                                                                </div>
+                                                                            )}
+
+                                                                            {l.dataVencimento && (
+                                                                                <div>
+                                                                                    <span className="font-bold">▪️ Data:</span> 📅 Prazo de {l.periodoData || 'Data Personalizada'} <br/>
+                                                                                    <span className="text-slate-500 ml-4">➔ Previsão na Data:</span> <span className="font-black">{l.dataVencimento.split('-').reverse().join('/')}</span>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                        
+                                                                        <p className={`text-[11px] uppercase tracking-wider font-black ${status.cor} mt-2`}>{status.msg}</p>
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex items-center gap-2 ml-4 shrink-0">
