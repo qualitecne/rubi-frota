@@ -1290,6 +1290,161 @@ const renderSelectRota = () => (
                                 <p className="text-sm">Por favor, escolha o seu veículo no <strong>menu</strong> para iniciar a sua jornada.</p>
                             </div>
                         )}
+                        {/* ========================================== */}
+                        {/* PÁGINA DEDICADA: INSPEÇÕES OBRIGATÓRIAS */}
+                        {/* ========================================== */}
+                        {view === 'inspecoes' && !showCadastro && !showCadastroFunc && (
+                            <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                                    <div>
+                                        <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">🚨 Inspeções Obrigatórias</h2>
+                                        <p className="text-sm font-bold text-slate-500">Checklists de segurança de preenchimento obrigatório.</p>
+                                    </div>
+                                    
+                                    {/* Seletor: Motorista ou Gestor */}
+                                    <div className="flex bg-slate-100 p-1.5 rounded-xl w-fit border border-slate-200 shadow-inner">
+                                        <button onClick={() => setTabInspecao('motorista')} className={`px-6 py-2.5 rounded-lg font-black text-xs md:text-sm uppercase tracking-wide transition ${tabInspecao === 'motorista' ? 'bg-white shadow-md text-blue-700' : 'text-slate-500 hover:text-slate-800'}`}>👨‍✈️ Sou Motorista</button>
+                                        <button onClick={() => setTabInspecao('gestor')} className={`px-6 py-2.5 rounded-lg font-black text-xs md:text-sm uppercase tracking-wide transition ${tabInspecao === 'gestor' ? 'bg-white shadow-md text-emerald-700' : 'text-slate-500 hover:text-slate-800'}`}>📊 Sou Gestor</button>
+                                    </div>
+                                </div>
+
+                                {/* ------------------------------------- */}
+                                {/* ABA DO MOTORISTA (LISTA SUSPENSA) */}
+                                {/* ------------------------------------- */}
+                                {tabInspecao === 'motorista' && (
+                                    <div className="bg-white p-6 md:p-8 rounded-3xl border-2 border-blue-100 shadow-lg">
+                                        <h3 className="text-lg font-black text-blue-900 mb-6 border-b border-slate-100 pb-4">Área de Realização de Inspeção</h3>
+                                        
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">1. Selecione a viatura que vai conduzir:</label>
+                                        <select className="w-full p-4 border-2 border-slate-200 rounded-xl bg-slate-50 font-black text-slate-700 text-lg outline-none focus:border-blue-500 transition mb-8" value={veiculoAtivo} onChange={e => { setVeiculoAtivo(e.target.value); setAcordeonAtivo(null); }}>
+                                            <option value="TODOS">-- Toque aqui para escolher a Placa --</option>
+                                            {veiculos.map(v => <option key={v.placa} value={v.placa}>{v.placa} - {v.modelo}</option>)}
+                                        </select>
+
+                                        {veiculoAtivo !== 'TODOS' ? (
+                                            <div className="space-y-4">
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">2. Pendências desta Viatura:</label>
+                                                {(() => {
+                                                    const pendentes = checkRotinasPendentes(veiculoAtivo);
+                                                    if (pendentes.length === 0) return (
+                                                        <div className="bg-emerald-50 border-2 border-emerald-200 p-8 rounded-2xl flex items-center justify-center gap-4 text-center">
+                                                            <span className="text-5xl">✅</span>
+                                                            <div><h4 className="font-black text-emerald-800 text-xl">Tudo em Dia!</h4><p className="text-sm font-bold text-emerald-600 mt-1">Nenhuma inspeção pendente. Boa viagem!</p></div>
+                                                        </div>
+                                                    );
+                                                    
+                                                    return pendentes.map(p => {
+                                                        const rotina = CHECKLISTS_MOTORISTA[p];
+                                                        const isExpanded = acordeonAtivo === p;
+                                                        const allChecked = rotina.itens.every((_, i) => checksRotina[i]);
+                                                        const canSubmit = allChecked && assinaturaRotina.trim().length >= 3;
+
+                                                        return (
+                                                            <div key={p} className={`border-2 rounded-2xl overflow-hidden transition-all ${isExpanded ? rotina.corBorda + ' shadow-lg' : 'border-slate-200 hover:border-slate-300'}`}>
+                                                                <button onClick={() => { setAcordeonAtivo(isExpanded ? null : p); setRotinaEmAndamento(p); setChecksRotina({}); setAssinaturaRotina(''); }} className="w-full flex justify-between items-center p-5 md:p-6 bg-slate-50 hover:bg-slate-100 transition text-left">
+                                                                    <div className="flex items-center gap-4">
+                                                                        <span className="text-3xl animate-pulse">🚨</span>
+                                                                        <div>
+                                                                            <h4 className="font-black text-slate-800 text-lg md:text-xl">{rotina.titulo}</h4>
+                                                                            <p className="text-xs font-bold text-slate-500 mt-1">{rotina.subtitulo}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <span className={`text-slate-400 font-black text-xl transition-transform ${isExpanded ? 'rotate-180 text-blue-500' : ''}`}>▼</span>
+                                                                </button>
+                                                                
+                                                                {isExpanded && (
+                                                                    <div className="p-5 md:p-6 bg-white border-t-2 border-slate-100 animate-fade-in">
+                                                                        <div className="bg-blue-50 text-blue-800 text-xs uppercase tracking-wide font-black p-4 rounded-xl mb-6 border border-blue-100">🎯 {rotina.foco}</div>
+                                                                        <div className="space-y-3 mb-6">
+                                                                            {rotina.itens.map((item, idx) => (
+                                                                                <label key={idx} className={`flex items-start gap-4 p-5 rounded-xl border-2 cursor-pointer transition select-none shadow-sm ${checksRotina[idx] ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-200'}`}>
+                                                                                    <input type="checkbox" className="mt-0.5 w-6 h-6 accent-emerald-600 cursor-pointer shrink-0" checked={checksRotina[idx] || false} onChange={() => setChecksRotina(prev => ({...prev, [idx]: !prev[idx]}))} />
+                                                                                    <span className={`text-sm font-bold ${checksRotina[idx] ? 'text-emerald-800 line-through opacity-60' : 'text-slate-700'}`}>{item}</span>
+                                                                                </label>
+                                                                            ))}
+                                                                        </div>
+                                                                        <div className="bg-slate-100 p-6 rounded-xl border border-slate-200">
+                                                                            <h4 className="text-xs font-black text-slate-500 uppercase tracking-wide border-b border-slate-200 pb-2 mb-4">Assinatura do Motorista</h4>
+                                                                            <input type="text" className="w-full border-2 border-slate-300 p-4 rounded-xl text-lg font-bold outline-none focus:border-emerald-500 bg-white" placeholder="Digite o seu nome completo..." value={assinaturaRotina} onChange={e => setAssinaturaRotina(e.target.value)} />
+                                                                            <button disabled={!canSubmit} onClick={() => { finalizarRotina(); setAcordeonAtivo(null); }} className={`w-full mt-4 font-black p-5 rounded-xl transition text-lg flex justify-center items-center gap-2 ${canSubmit ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg' : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'}`}>
+                                                                                {canSubmit ? '✅ Confirmar Inspeção' : '⚠️ Marque tudo e assine'}
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )
+                                                    });
+                                                })()}
+                                            </div>
+                                        ) : (
+                                            <div className="text-center p-10 bg-slate-50 border-2 border-dashed border-slate-300 rounded-3xl text-slate-400 font-bold">👆 Selecione a viatura acima para aceder ao checklist.</div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* ------------------------------------- */}
+                                {/* ABA DO GESTOR (LISTA SUSPENSA) */}
+                                {/* ------------------------------------- */}
+                                {tabInspecao === 'gestor' && (
+                                    <div className="bg-white p-6 md:p-8 rounded-3xl border-2 border-emerald-100 shadow-lg">
+                                        <h3 className="text-lg font-black text-emerald-900 mb-6 border-b border-slate-100 pb-4">Acompanhamento de Frota</h3>
+                                        <div className="space-y-4">
+                                            {veiculos.map(v => {
+                                                const isExpanded = acordeonAtivo === `gestor_${v.placa}`;
+                                                const pendentes = checkRotinasPendentes(v.placa);
+                                                const historico = rotinas[v.placa] || {};
+                                                
+                                                return (
+                                                    <div key={v.placa} className={`border-2 rounded-2xl overflow-hidden transition-all ${isExpanded ? 'border-emerald-300 shadow-md' : 'border-slate-200 hover:border-slate-300'}`}>
+                                                        <button onClick={() => setAcordeonAtivo(isExpanded ? null : `gestor_${v.placa}`)} className="w-full flex justify-between items-center p-5 bg-slate-50 hover:bg-slate-100 transition">
+                                                            <div className="flex flex-wrap items-center gap-3">
+                                                                <span className="bg-slate-800 text-white font-black px-4 py-2 rounded-xl text-sm tracking-widest shadow-sm">{v.placa}</span>
+                                                                <span className="font-bold text-slate-700">{v.modelo}</span>
+                                                                {pendentes.length > 0 ? (
+                                                                    <span className="bg-red-100 text-red-700 text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-wider animate-pulse border border-red-200">{pendentes.length} Pendente(s)</span>
+                                                                ) : (
+                                                                    <span className="bg-emerald-100 text-emerald-700 text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-wider border border-emerald-200">✅ Em Dia</span>
+                                                                )}
+                                                            </div>
+                                                            <span className={`text-slate-400 font-black text-xl transition-transform ${isExpanded ? 'rotate-180 text-emerald-600' : ''}`}>▼</span>
+                                                        </button>
+                                                        
+                                                        {isExpanded && (
+                                                            <div className="p-3 bg-white divide-y divide-slate-100">
+                                                                {Object.values(CHECKLISTS_MOTORISTA).map(rotina => {
+                                                                    const isPendente = pendentes.includes(rotina.id);
+                                                                    const ultimo = historico[rotina.id];
+                                                                    return (
+                                                                        <div key={rotina.id} className="p-4 flex flex-col md:flex-row md:justify-between md:items-center gap-3 hover:bg-slate-50 transition rounded-lg">
+                                                                            <div>
+                                                                                <h5 className="font-black text-sm text-slate-800">{rotina.titulo} <span className="text-[10px] text-slate-400 font-bold ml-2">({rotina.subtitulo.split('—')[0].trim()})</span></h5>
+                                                                                {ultimo ? (
+                                                                                    <p className="text-xs text-slate-500 font-bold mt-1.5">Última inspeção: <span className="text-slate-800">{ultimo.data} às {ultimo.hora}</span> por <span className="text-blue-700 uppercase bg-blue-50 px-2 py-0.5 rounded border border-blue-100 ml-1">{ultimo.motorista}</span></p>
+                                                                                ) : (
+                                                                                    <p className="text-xs text-slate-400 font-bold mt-1.5 bg-slate-100 border border-slate-200 w-fit px-2 py-0.5 rounded">Nunca realizada no sistema</p>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="shrink-0 mt-2 md:mt-0">
+                                                                                {isPendente ? (
+                                                                                    <span className="bg-red-50 text-red-700 border border-red-200 px-4 py-2 rounded-xl text-[11px] font-black flex items-center justify-center gap-2 shadow-sm w-full md:w-auto">🚨 PENDENTE AGORA</span>
+                                                                                ) : (
+                                                                                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-2 rounded-xl text-[11px] font-black flex items-center justify-center gap-2 shadow-sm w-full md:w-auto">✅ REGULARIZADO</span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {showCadastroFunc && userRole === 'GESTOR' && (
                             <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200 animate-fade-in max-w-2xl mx-auto">
