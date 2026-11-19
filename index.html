@@ -186,7 +186,80 @@
             const [view, setView] = useState('dashboard');
             const [showCadastro, setShowCadastro] = useState(false);
             const [showCadastroFunc, setShowCadastroFunc] = useState(false);
-            
+            // --- MÓDULO: ROTINAS DO MOTORISTA ---
+            const [rotinas, setRotinas] = useState(() => JSON.parse(localStorage.getItem('rubi_frota_rotinas')) || {});
+            const [rotinaEmAndamento, setRotinaEmAndamento] = useState(null);
+            const [checksRotina, setChecksRotina] = useState({});
+            const [assinaturaRotina, setAssinaturaRotina] = useState('');
+
+            const CHECKLISTS_MOTORISTA = {
+                semanal: {
+                    id: 'semanal', titulo: 'Alerta Semanal', subtitulo: 'A cada 7 dias — Leva 3 minutos', dias: 7,
+                    foco: 'Foco exclusivo nos itens que podem fundir o motor ou causar acidentes.',
+                    corBorda: 'border-blue-500', corBgBtn: 'bg-blue-100 hover:bg-blue-200', corTextBtn: 'text-blue-800',
+                    itens: [
+                        'Nível da Água (Reservatório): Conferir se está entre o mínimo e o máximo.',
+                        'Nível do Óleo (Vareta): Puxar a vareta, limpar e conferir o nível exato.',
+                        'Calibragem e Pneus: Conferir a pressão (incluindo estepe) e olhar bolhas, cortes ou pregos.',
+                        'Luzes de Sinalização: Testar luz de freio, setas, lanternas e faróis.'
+                    ]
+                },
+                quinzenal: {
+                    id: 'quinzenal', titulo: 'Alerta Quinzenal', subtitulo: 'A cada 15 dias — Leva 10 minutos', dias: 15,
+                    foco: 'Foco em desgaste mecânico, fluídos secundários e estrutura da caçamba.',
+                    corBorda: 'border-amber-500', corBgBtn: 'bg-amber-100 hover:bg-amber-200', corTextBtn: 'text-amber-800',
+                    itens: [
+                        'Fluido de Freio e Direção: Conferir os níveis (não devem baixar se estiver normal).',
+                        'Manchas no Chão: Olhar por baixo em busca de pingos de óleo ou água.',
+                        'Tampa da Caçamba: Conferir cabos de aço e se as travas fecham com firmeza.',
+                        'Limpador de Para-brisa: Conferir nível da água e estado das palhetas.'
+                    ]
+                },
+                mensal: {
+                    id: 'mensal', titulo: 'Alerta Mensal', subtitulo: 'A cada 30 dias — Leva 15 minutos', dias: 30,
+                    foco: 'Foco na parte inferior do carro e componentes de desgaste pesado.',
+                    corBorda: 'border-red-500', corBgBtn: 'bg-red-100 hover:bg-red-200', corTextBtn: 'text-red-800',
+                    itens: [
+                        'Coifas (Homocinética/Câmbio): Esterçar rodas ao máximo e ver se borrachas não estão rasgadas.',
+                        'Feixe de Molas e Batentes: Checar se há lâmina trincada ou batente faltando.',
+                        'Desgaste dos Pneus: Passar a mão na banda para sentir se está "escamando".',
+                        'Bateria e Correia: Conferir fixação, polos (sem zinabre) e correia do alternador.'
+                    ]
+                }
+            };
+
+            const checkRotinasPendentes = (placa) => {
+                if (!placa) return [];
+                const historico = rotinas[placa] || {};
+                return Object.values(CHECKLISTS_MOTORISTA).filter(rotina => {
+                    const ultimo = historico[rotina.id];
+                    if (!ultimo) return true; // Nunca foi feito
+                    const diasPassados = Math.floor((new Date() - new Date(ultimo.dataIso)) / (1000 * 60 * 60 * 24));
+                    return diasPassados >= rotina.dias; // Passou do prazo
+                }).map(r => r.id);
+            };
+
+            const finalizarRotina = () => {
+                const agora = new Date();
+                const novoHistorico = {
+                    ...rotinas,
+                    [veiculoAtivo]: {
+                        ...(rotinas[veiculoAtivo] || {}),
+                        [rotinaEmAndamento]: {
+                            dataIso: agora.toISOString(),
+                            data: agora.toLocaleDateString('pt-BR'),
+                            hora: agora.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
+                            motorista: assinaturaRotina
+                        }
+                    }
+                };
+                setRotinas(novoHistorico);
+                localStorage.setItem('rubi_frota_rotinas', JSON.stringify(novoHistorico));
+                setRotinaEmAndamento(null);
+                setChecksRotina({});
+                setAssinaturaRotina('');
+            };
+            // ------------------------------------
             const [isGenerating, setIsGenerating] = useState(false);
             const [formError, setFormError] = useState('');
             const [syncStatus, setSyncStatus] = useState('A conectar...');
@@ -2005,7 +2078,105 @@ const renderSelectRota = () => (
                                                     <input className="w-full border border-blue-200 p-3 rounded-xl text-sm outline-none focus:border-blue-500 bg-white shadow-sm" placeholder="Ex: Troca de Óleo, IPVA, Bateria..." value={novoLembrete.tarefa || novoLembrete.tipo || ''} onChange={e => setNovoLembrete({...novoLembrete, tipo: e.target.value, tarefa: e.target.value})} list="opcoes-manutencao" />
                                                     <datalist id="opcoes-manutencao"><option value="Troca de Óleo e Filtro" /><option value="Alinhamento e Balanceamento" /><option value="Seguro/IPVA" /><option value="Revisão Pneus" /></datalist>
                                                 </div>
+
+                                                {/* MÓDULO: CHECKLIST DE ROTINA DO MOTORISTA */}
+                                {veiculoAtivo && veiculoAtivo !== 'TODOS' && (
+                                    <div className="mb-8">
+                                        {(() => {
+                                            const pendentes = checkRotinasPendentes(veiculoAtivo);
+                                            
+                                            // Se o Motorista clicou para iniciar um checklist:
+                                            if (rotinaEmAndamento) {
+                                                const rotina = CHECKLISTS_MOTORISTA[rotinaEmAndamento];
+                                                const allChecked = rotina.itens.every((_, i) => checksRotina[i]);
+                                                const canSubmit = allChecked && assinaturaRotina.trim().length >= 3;
                                                 
+                                                return (
+                                                    <div className="bg-white p-6 rounded-2xl border-2 border-slate-300 shadow-xl animate-fade-in">
+                                                        <div className="flex justify-between items-center mb-4 border-b pb-4">
+                                                            <div>
+                                                                <h3 className="text-xl font-black text-slate-800">{rotina.titulo}</h3>
+                                                                <p className="text-sm font-bold text-slate-500">{rotina.subtitulo}</p>
+                                                            </div>
+                                                            <button onClick={() => { setRotinaEmAndamento(null); setChecksRotina({}); }} className="text-slate-400 hover:text-slate-600 font-bold underline px-3 py-2 bg-slate-50 rounded-lg">Cancelar</button>
+                                                        </div>
+                                                        
+                                                        <div className="bg-blue-50 text-blue-800 text-[11px] uppercase tracking-wide font-black p-3 rounded-lg mb-6 border border-blue-100">
+                                                            🎯 {rotina.foco}
+                                                        </div>
+                                                        
+                                                        <div className="space-y-3 mb-6">
+                                                            {rotina.itens.map((item, idx) => (
+                                                                <label key={idx} className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition select-none ${checksRotina[idx] ? 'bg-emerald-50 border-emerald-400 shadow-sm' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
+                                                                    <input type="checkbox" className="mt-0.5 w-6 h-6 accent-emerald-600 cursor-pointer shrink-0" checked={checksRotina[idx] || false} onChange={() => setChecksRotina(prev => ({...prev, [idx]: !prev[idx]}))} />
+                                                                    <span className={`text-sm font-bold leading-snug ${checksRotina[idx] ? 'text-emerald-800 line-through opacity-60' : 'text-slate-700'}`}>{item}</span>
+                                                                </label>
+                                                            ))}
+                                                        </div>
+                                                        
+                                                        <div className="bg-slate-100 p-5 rounded-xl border border-slate-200 space-y-4">
+                                                            <h4 className="text-xs font-black text-slate-500 uppercase tracking-wide border-b border-slate-200 pb-2">Assinatura Eletrônica (Obrigatória)</h4>
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                <div>
+                                                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Seu Nome para Assinar</label>
+                                                                    <input type="text" className="w-full border border-slate-300 p-3 rounded-lg text-sm font-bold outline-none focus:border-emerald-500 bg-white shadow-inner" placeholder="Digite o seu nome..." value={assinaturaRotina} onChange={e => setAssinaturaRotina(e.target.value)} />
+                                                                </div>
+                                                                <div className="flex gap-2">
+                                                                    <div className="flex-1">
+                                                                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Data (Auto)</label>
+                                                                        <input type="text" disabled className="w-full border border-slate-200 p-3 rounded-lg text-sm bg-slate-200 font-black text-slate-500" value={new Date().toLocaleDateString('pt-BR')} />
+                                                                    </div>
+                                                                    <div className="flex-1">
+                                                                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Hora (Auto)</label>
+                                                                        <input type="text" disabled className="w-full border border-slate-200 p-3 rounded-lg text-sm bg-slate-200 font-black text-slate-500" value={new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})} />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <button disabled={!canSubmit} onClick={finalizarRotina} className={`w-full mt-4 font-black p-5 rounded-xl transition shadow-md flex items-center justify-center gap-2 text-lg ${canSubmit ? 'bg-emerald-600 hover:bg-emerald-700 text-white hover:shadow-lg hover:shadow-emerald-500/40' : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'}`}>
+                                                            {canSubmit ? '✅ Confirmar e Gravar Inspeção' : '⚠️ Marque todos os itens e assine'}
+                                                        </button>
+                                                    </div>
+                                                );
+                                            }
+                                            
+                                            // Ecrã inicial: Mostrar Pendências
+                                            if (pendentes.length > 0) {
+                                                return (
+                                                    <div className="space-y-4">
+                                                        <h3 className="text-sm font-black text-red-600 uppercase tracking-wide flex items-center gap-2 bg-red-50 p-3 rounded-lg border border-red-100">🚨 Inspeções Obrigatórias Pendentes</h3>
+                                                        {pendentes.map(p => {
+                                                            const rotina = CHECKLISTS_MOTORISTA[p];
+                                                            return (
+                                                                <div key={p} className={`bg-white border-l-8 ${rotina.corBorda} p-5 rounded-xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 transition hover:shadow-md`}>
+                                                                    <div>
+                                                                        <h4 className="font-black text-slate-800 text-lg">{rotina.titulo}</h4>
+                                                                        <p className="text-xs font-bold text-slate-500">{rotina.subtitulo}</p>
+                                                                    </div>
+                                                                    <button onClick={() => { setRotinaEmAndamento(p); setChecksRotina({}); setAssinaturaRotina(''); }} className={`${rotina.corBgBtn} ${rotina.corTextBtn} font-black px-6 py-3 rounded-xl transition shadow-sm`}>
+                                                                        Iniciar Inspeção
+                                                                    </button>
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                );
+                                            } else {
+                                                // Tudo em dia!
+                                                return (
+                                                    <div className="bg-emerald-50 border-2 border-emerald-200 p-6 rounded-2xl flex items-center gap-4 shadow-sm">
+                                                        <span className="text-4xl">✅</span>
+                                                        <div>
+                                                            <h4 className="font-black text-emerald-800 text-lg">Inspeções em Dia!</h4>
+                                                            <p className="text-sm font-bold text-emerald-600 mt-1">Nenhum checklist pendente para esta viatura neste momento. Boa viagem!</p>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            }
+                                        })()}
+                                    </div>
+                                )}
                                                 <div className="bg-slate-50 border border-slate-200 p-5 rounded-2xl mt-4 mb-4">
                                                     <h3 className="text-sm font-black text-slate-800 mb-4 flex items-center gap-2">⏱️ Regras de Vencimento</h3>
                                                     
