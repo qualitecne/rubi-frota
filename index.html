@@ -184,6 +184,7 @@
             const [deletedKeys, setDeletedKeys] = useState({ veiculos: [], despesas: [], rotas: [], lembretes: [], funcionarios: [] });
             
             const [view, setView] = useState('dashboard');
+            const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
             const [showCadastro, setShowCadastro] = useState(false);
             const [showCadastroFunc, setShowCadastroFunc] = useState(false);
 
@@ -1188,8 +1189,15 @@
             return (
                 <div className="min-h-screen font-sans text-slate-800 flex flex-col md:flex-row bg-[#f8fafc]">
                     {/* BARRA SUPERIOR MOBILE */}
-                    <div className="md:hidden bg-[#0f172a] text-white p-4 flex justify-between items-center shadow-md z-20 relative">
-                        <h1 className="text-xl font-black tracking-tighter text-blue-400">RUBI<span className="text-white font-light">FROTA</span></h1>
+                    <div className="md:hidden bg-[#0f172a] text-white p-4 flex justify-between items-center shadow-md z-30 relative">
+                        <div className="flex items-center gap-4">
+                            {userRole === 'GESTOR' && (
+                                <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-white text-3xl pb-1 focus:outline-none hover:text-blue-400 transition">
+                                    ☰
+                                </button>
+                            )}
+                            <h1 className="text-xl font-black tracking-tighter text-blue-400">RUBI<span className="text-white font-light">FROTA</span></h1>
+                        </div>
                         <div className="flex gap-2">
                             <span className={`text-[9px] font-bold px-2 py-1 rounded-full flex items-center ${syncStatus === 'Sincronizado' ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'}`}>
                                 {syncStatus}
@@ -1197,6 +1205,19 @@
                             <button onClick={() => { setUserRole(null); localStorage.removeItem('rubi_frota_role'); }} className="bg-red-500 hover:bg-red-600 text-[10px] font-bold px-3 py-1.5 rounded-full">Sair</button>
                         </div>
                     </div>
+
+                    {/* GAVETA DO MENU GLOBAL MOBILE (Abre quando clica no ☰) */}
+                    {mobileMenuOpen && userRole === 'GESTOR' && (
+                        <div className="md:hidden absolute top-[68px] left-0 w-full bg-[#0f172a] z-40 border-t border-slate-700 shadow-2xl animate-fade-in flex flex-col p-2">
+                            <button onClick={() => {setView('dashboard'); setShowCadastro(false); setShowCadastroFunc(false); setMobileMenuOpen(false);}} className={`text-left p-4 text-sm font-bold flex items-center gap-4 border-b border-slate-700/50 ${view === 'dashboard' && !showCadastro && !showCadastroFunc ? 'text-blue-400' : 'text-slate-300'}`}><span>📊</span> Dashboard BI</button>
+                            <button onClick={() => {setView('rotas'); setShowCadastro(false); setShowCadastroFunc(false); setMobileMenuOpen(false);}} className={`text-left p-4 text-sm font-bold flex items-center gap-4 border-b border-slate-700/50 ${view === 'rotas' && !showCadastro && !showCadastroFunc ? 'text-blue-400' : 'text-slate-300'}`}><span>🗺️</span> Gestão de Rotas</button>
+                            <button onClick={() => {setView('historico'); setShowCadastro(false); setShowCadastroFunc(false); setMobileMenuOpen(false);}} className={`text-left p-4 text-sm font-bold flex items-center gap-4 border-b border-slate-700/50 ${view === 'historico' && !showCadastro && !showCadastroFunc ? 'text-blue-400' : 'text-slate-300'}`}><span>🧾</span> Histórico (Caixa)</button>
+                            <button onClick={() => {setView('lembretes'); setShowCadastro(false); setShowCadastroFunc(false); setMobileMenuOpen(false);}} className={`text-left p-4 text-sm font-bold flex items-center gap-4 border-b border-slate-700/50 ${view === 'lembretes' && !showCadastro && !showCadastroFunc ? 'text-blue-400' : 'text-slate-300'}`}><span>🔔</span> Alertas / Risco</button>
+                            <button onClick={() => {setView('inspecoes'); setShowCadastro(false); setShowCadastroFunc(false); setMobileMenuOpen(false);}} className={`text-left p-4 text-sm font-bold flex items-center gap-4 border-b border-slate-700/50 ${view === 'inspecoes' && !showCadastro && !showCadastroFunc ? 'text-blue-400' : 'text-slate-300'}`}><span>📋</span> Inspeções Obrigatórias</button>
+                            <button onClick={() => {setShowCadastro(!showCadastro); setShowCadastroFunc(false); setEditingVeicPlaca(null); setMobileMenuOpen(false);}} className={`text-left p-4 text-sm font-bold flex items-center gap-4 border-b border-slate-700/50 ${showCadastro ? 'text-blue-400' : 'text-slate-300'}`}><span>🚘</span> Gerir Veículos</button>
+                            <button onClick={() => {setShowCadastroFunc(!showCadastroFunc); setShowCadastro(false); setEditingFuncNome(null); setMobileMenuOpen(false);}} className={`text-left p-4 text-sm font-bold flex items-center gap-4 ${showCadastroFunc ? 'text-blue-400' : 'text-slate-300'}`}><span>👥</span> Gerir Equipa</button>
+                        </div>
+                    )}
                     
                     {/* SELETOR MOBILE */}
                     {!showCadastro && !showCadastroFunc && (
