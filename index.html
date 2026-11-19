@@ -2012,7 +2012,15 @@ const renderSelectRota = () => (
                                                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-2 border-b border-slate-100 pb-1">📅 Vence por Data Exata</label>
                                                             <div className="space-y-3 mt-2">
                                                                 <input type="date" className="w-full border border-slate-300 p-3 rounded-lg text-sm outline-none focus:border-blue-500" value={novoLembrete.dataVencimento || ''} onChange={e => setNovoLembrete({...novoLembrete, dataVencimento: e.target.value})} />
-                                                                <p className="text-[10px] text-slate-400 font-medium leading-tight">Escolha o dia limite. Deixe vazio se não expirar por tempo.</p>
+                                                                
+                                                                {/* Botões Inteligentes de Cálculo de Prazo */}
+                                                                <div className="flex gap-2">
+                                                                    <button type="button" onClick={() => { const d = new Date(); d.setMonth(d.getMonth() + 3); setNovoLembrete({...novoLembrete, dataVencimento: d.toISOString().split('T')[0]}); }} className="flex-1 bg-slate-100 hover:bg-blue-100 text-blue-700 text-[10px] font-black py-2 rounded-lg transition border border-slate-200 hover:border-blue-300">+ 3 Meses</button>
+                                                                    <button type="button" onClick={() => { const d = new Date(); d.setMonth(d.getMonth() + 6); setNovoLembrete({...novoLembrete, dataVencimento: d.toISOString().split('T')[0]}); }} className="flex-1 bg-slate-100 hover:bg-blue-100 text-blue-700 text-[10px] font-black py-2 rounded-lg transition border border-slate-200 hover:border-blue-300">+ 6 Meses</button>
+                                                                    <button type="button" onClick={() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); setNovoLembrete({...novoLembrete, dataVencimento: d.toISOString().split('T')[0]}); }} className="flex-1 bg-slate-100 hover:bg-blue-100 text-blue-700 text-[10px] font-black py-2 rounded-lg transition border border-slate-200 hover:border-blue-300">+ 1 Ano</button>
+                                                                </div>
+
+                                                                <p className="text-[9px] text-slate-500 mt-2 leading-tight">💡 <span className="font-bold">Dica:</span> Clique num botão para calcular a data a partir de hoje, ou escolha no calendário manualmente.</p>
                                                             </div>
                                                         </div>
                                                     </div>
