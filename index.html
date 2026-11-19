@@ -309,11 +309,15 @@
                     else if (dias <= 15) { piorCenario = 1; statusFinal = { icone: '📅', cor: 'text-amber-600', bg: 'bg-amber-50', msg: `Vence em ${dias} dias`, critico: false }; }
                 }
 
-                // 2. Avalia o Prazo por KM (Se for mais grave, sobrepõe-se à data)
-                if (lembrete.kmVencimento) {
+                // 2. Avalia o Prazo por KM (Aceita KM Exato ou Ciclo Contínuo)
+                let alvoKm = null;
+                if (lembrete.kmVencimento) alvoKm = parseFloat(lembrete.kmVencimento);
+                else if (lembrete.freqKm && lembrete.ultimoKm) alvoKm = parseFloat(lembrete.ultimoKm) + parseFloat(lembrete.freqKm);
+
+                if (alvoKm) {
                     const v = veiculos.find(v => v.placa === lembrete.placa);
                     const kmAtual = v ? parseFloat(v.kmAtual) : 0;
-                    const kmFaltam = parseFloat(lembrete.kmVencimento) - kmAtual;
+                    const kmFaltam = alvoKm - kmAtual;
                     
                     if (kmFaltam <= 0 && piorCenario <= 2) { 
                         piorCenario = 2; 
@@ -1982,20 +1986,31 @@ const renderSelectRota = () => (
                                                     <h3 className="text-sm font-black text-blue-900 mb-4 flex items-center gap-2">⏱️ Regras de Vencimento <span className="text-[9px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full uppercase tracking-wider">O que ocorrer primeiro</span></h3>
                                                     
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                        <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm">
-                                                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-2 border-b border-slate-100 pb-1">🛣️ Vence por Quilometragem</label>
-                                                            <div className="space-y-3 mt-2 relative">
-                                                                <input type="number" className="w-full border border-slate-300 p-3 pr-10 rounded-lg text-sm outline-none focus:border-blue-500" placeholder="Ex: Avisar nos 150000 KM" value={novoLembrete.kmVencimento || ''} onChange={e => setNovoLembrete({...novoLembrete, kmVencimento: e.target.value})} />
-                                                                <span className="absolute right-3 top-3 text-xs font-bold text-slate-400">KM</span>
-                                                                <p className="text-[10px] text-slate-400 font-medium leading-tight">Preencha o KM final. Deixe vazio se não expirar por KM.</p>
+                                                        <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm flex flex-col gap-3">
+                                                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block border-b border-slate-100 pb-1">🛣️ Vence por Quilometragem</label>
+                                                            
+                                                            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                                                <span className="text-[9px] font-bold text-slate-500 uppercase block mb-2">Opção A: KM Exato (Alvo Único)</span>
+                                                                <div className="relative">
+                                                                    <input type="number" className="w-full border border-slate-300 p-2 pr-10 rounded text-sm outline-none focus:border-blue-500 bg-white" placeholder="Ex: 150000" value={novoLembrete.kmVencimento || ''} onChange={e => setNovoLembrete({...novoLembrete, kmVencimento: e.target.value, freqKm: '', ultimoKm: ''})} />
+                                                                    <span className="absolute right-3 top-2 text-xs font-bold text-slate-400">KM</span>
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                                                <span className="text-[9px] font-bold text-slate-500 uppercase block mb-2">Opção B: Ciclo Contínuo (A cada X KM)</span>
+                                                                <div className="flex flex-col gap-2">
+                                                                    <input type="number" className="w-full border border-slate-300 p-2 rounded text-sm outline-none focus:border-blue-500 bg-white" placeholder="Avisar a cada X KM (ex: 10000)" value={novoLembrete.freqKm || ''} onChange={e => setNovoLembrete({...novoLembrete, freqKm: e.target.value, kmVencimento: ''})} />
+                                                                    <input type="number" className="w-full border border-slate-300 p-2 rounded text-sm outline-none focus:border-blue-500 bg-white" placeholder="Feito no KM (ex: 140000)" value={novoLembrete.ultimoKm || ''} onChange={e => setNovoLembrete({...novoLembrete, ultimoKm: e.target.value, kmVencimento: ''})} />
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         
-                                                        <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm">
+                                                        <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm h-fit">
                                                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-2 border-b border-slate-100 pb-1">📅 Vence por Data Exata</label>
                                                             <div className="space-y-3 mt-2">
                                                                 <input type="date" className="w-full border border-slate-300 p-3 rounded-lg text-sm outline-none focus:border-blue-500" value={novoLembrete.dataVencimento || ''} onChange={e => setNovoLembrete({...novoLembrete, dataVencimento: e.target.value})} />
-                                                                <p className="text-[10px] text-slate-400 font-medium leading-tight">Escolha o dia limite. Deixe vazio se não expirar por data.</p>
+                                                                <p className="text-[10px] text-slate-400 font-medium leading-tight">Escolha o dia limite. Deixe vazio se não expirar por tempo.</p>
                                                             </div>
                                                         </div>
                                                     </div>
