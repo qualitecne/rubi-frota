@@ -2046,9 +2046,9 @@ const renderSelectRota = () => (
                                                                             {l.tarefa || l.tipo}
                                                                         </p>
                                                                         <p className="text-[11px] text-slate-600 font-bold mt-1.5 mb-1.5 leading-relaxed">
-                                                                            {l.kmVencimento && <span className="block">🎯 Opção A: Alvo de {l.kmVencimento} KM</span>}
+                                                                            {l.kmVencimento && <span className="block mb-1">🎯 Opção A: Alvo de {l.kmVencimento} KM</span>}
                                                                             {l.dataVencimento && <span className="inline-block mr-3">📅 {l.periodoData ? `${l.periodoData} - ` : ''}Data Exata: {l.dataVencimento.split('-').reverse().join('/')}</span>}
-                                                                            {l.freqKm && l.ultimoKm && <span className="inline-block">♻️ Opção B: Ciclo de {l.freqKm} KM (Feito: {l.ultimoKm})</span>}
+                                                                            {(l.freqKm || l.ultimoKm) && <span className="inline-block">♻️ Opção B: Ciclo de {l.freqKm || '?'} KM (Feito: {l.ultimoKm || '?'})</span>}
                                                                         </p>
                                                                         <p className={`text-xs font-black ${status.cor}`}>{status.msg}</p>
                                                                     </div>
