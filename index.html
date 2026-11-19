@@ -272,6 +272,9 @@
                 setHistoricoInspecoes(novoLog);
                 localStorage.setItem('rubi_frota_inspecoes_log', JSON.stringify(novoLog));
 
+                // 🌟 GATILHO DA NUVEM: Envia a inspeção imediatamente para o Gestor
+                salvarNaNuvem(veiculos, despesas, lembretes, rotas, funcionarios, deletedKeys, novoHistorico, novoLog);
+
                 setRotinaEmAndamento(null);
                 setChecksRotina({});
                 setAssinaturaRotina('');
@@ -302,6 +305,9 @@
             // ==========================================
             // EFEITOS DE ARRANQUE E NUVEM
             // ==========================================
+            // ==========================================
+            // EFEITOS DE ARRANQUE E NUVEM
+            // ==========================================
             const carregarDaNuvem = async () => {
                 setSyncStatus('A puxar dados...');
                 try {
@@ -310,6 +316,11 @@
                     if (result.status === 'sucesso') {
                         setVeiculos(result.dados.veiculos || []); setDespesas(result.dados.despesas || []); setLembretes(result.dados.lembretes || []);
                         setRotas(result.dados.rotas || []); setFuncionarios(result.dados.funcionarios || []);
+                        
+                        // 🌟 PUXA AS INSPEÇÕES
+                        if (result.dados.rotinas) setRotinas(result.dados.rotinas);
+                        if (result.dados.historicoInspecoes) setHistoricoInspecoes(result.dados.historicoInspecoes);
+                        
                         setSyncStatus('Sincronizado'); localStorage.setItem('rubi_frota_db', JSON.stringify(result.dados));
                     }
                 } catch (error) {
@@ -321,6 +332,8 @@
                             setVeiculos(Array.isArray(parsed.veiculos) ? parsed.veiculos : []); setDespesas(Array.isArray(parsed.despesas) ? parsed.despesas : []);
                             setLembretes(Array.isArray(parsed.lembretes) ? parsed.lembretes : []); setRotas(Array.isArray(parsed.rotas) ? parsed.rotas : []);
                             setFuncionarios(Array.isArray(parsed.funcionarios) ? parsed.funcionarios : []);
+                            if (parsed.rotinas) setRotinas(parsed.rotinas);
+                            if (parsed.historicoInspecoes) setHistoricoInspecoes(parsed.historicoInspecoes);
                         } catch(e){}
                     }
                 }
@@ -699,13 +712,14 @@
             // ==========================================
             // MOTOR DE SINCRONIZAÇÃO ANTI-CONFLITOS
             // ==========================================
-            const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios, dKeys = deletedKeys) => {
+            const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios, dKeys = deletedKeys, rotinasSync = rotinas, histSync = historicoInspecoes) => {
                 setSyncStatus('A verificar conflitos...');
                 try {
                     const getResp = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'carregar' }) });
                     const cloud = await getResp.json();
                     
                     let finalVeics = veics, finalDesps = desps, finalLembs = lembs, finalRots = rots, finalFuncs = funcs;
+                    let finalRotinas = rotinasSync, finalHist = histSync;
 
                     if (cloud.status === 'sucesso' && cloud.dados) {
                         const mergeSeguro = (local, nuvem, chave, tipoDel) => {
@@ -728,21 +742,31 @@
                         finalLembs = mergeSeguro(lembs, cloud.dados.lembretes, 'id', 'lembretes');
                         finalFuncs = mergeSeguro(funcs, cloud.dados.funcionarios, 'nome', 'funcionarios');
                         finalDesps = mergeDespesas(desps, cloud.dados.despesas);
+
+                        // 🌟 FUNDE AS INSPEÇÕES DA NUVEM COM AS LOCAIS
+                        if (cloud.dados.rotinas) finalRotinas = { ...cloud.dados.rotinas, ...rotinasSync };
+                        if (cloud.dados.historicoInspecoes) {
+                            const localIds = new Set(histSync.map(h => h.id));
+                            const faltantes = cloud.dados.historicoInspecoes.filter(h => !localIds.has(h.id));
+                            finalHist = [...histSync, ...faltantes].sort((a,b) => b.id - a.id);
+                        }
                     }
 
                     setSyncStatus('A gravar...');
-                    localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: finalVeics, despesas: finalDesps, lembretes: finalLembs, rotas: finalRots, funcionarios: finalFuncs }));
+                    const dbObj = { veiculos: finalVeics, despesas: finalDesps, lembretes: finalLembs, rotas: finalRots, funcionarios: finalFuncs, rotinas: finalRotinas, historicoInspecoes: finalHist };
+                    localStorage.setItem('rubi_frota_db', JSON.stringify(dbObj));
                     
-                    const pushResp = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'sincronizar', veiculos: finalVeics, despesas: finalDesps, lembretes: finalLembs, rotas: finalRots, funcionarios: finalFuncs }) });
+                    const pushResp = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'sincronizar', ...dbObj }) });
                     const result = await pushResp.json();
                     
                     if (result.status === 'sucesso') {
                         setSyncStatus('Sincronizado');
                         setVeiculos(finalVeics); setDespesas(finalDesps); setLembretes(finalLembs); setRotas(finalRots); setFuncionarios(finalFuncs);
+                        setRotinas(finalRotinas); setHistoricoInspecoes(finalHist);
                     } else { setSyncStatus('Erro Sync'); }
                 } catch (error) { 
                     setSyncStatus('Modo Offline'); 
-                    localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots, funcionarios: funcs }));
+                    localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: veics, despesas: desps, lembretes: lembs, rotas: rots, funcionarios: funcs, rotinas: rotinasSync, historicoInspecoes: histSync }));
                 }
             };
 
@@ -950,9 +974,12 @@
                 }
                 
                 setLembretes(novosLembretes);
-                localStorage.setItem('rubi_frota_lembretes', JSON.stringify(novosLembretes));
+                
+                // CORREÇÃO VITAL: Agora sincroniza permanentemente com a base de dados!
+                salvarNaNuvem(veiculos, despesas, novosLembretes, rotas, funcionarios);
                 
                 setNovoLembrete({ tipo: '', tarefa: '', placa: '', kmVencimento: '', freqKm: '', ultimoKm: '', dataUltimoKm: '', dataVencimento: '', periodoData: '', observacoes: '' });
+                alert(isEdicao ? '✅ Regra atualizada e guardada na nuvem!' : '✅ Regra criada e guardada na nuvem!');
             };
 
             const removerLembrete = (id) => {
