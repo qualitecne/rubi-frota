@@ -2045,7 +2045,12 @@ const renderSelectRota = () => (
                                                                             {isGlobal && <span className="bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded tracking-wider mr-2 align-middle">{l.placa}</span>}
                                                                             {l.tarefa || l.tipo}
                                                                         </p>
-                                                                        <p className={`text-xs font-bold mt-1 ${status.cor}`}>{status.msg}</p>
+                                                                        <div className="flex flex-wrap gap-2 mt-1.5 mb-1.5">
+                                                                            {l.kmVencimento && <span className="text-[9px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-black border border-slate-200">🎯 Opção A: Alvo de {l.kmVencimento} KM</span>}
+                                                                            {l.freqKm && l.ultimoKm && <span className="text-[9px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-black border border-slate-200">♻️ Opção B: Ciclo de {l.freqKm} KM (Feito: {l.ultimoKm})</span>}
+                                                                            {l.dataVencimento && <span className="text-[9px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-black border border-slate-200">📅 Data Exata: {l.dataVencimento.split('-').reverse().join('/')}</span>}
+                                                                        </div>
+                                                                        <p className={`text-xs font-black ${status.cor}`}>{status.msg}</p>
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex items-center gap-2 ml-4 shrink-0">
