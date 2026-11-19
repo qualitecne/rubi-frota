@@ -1311,10 +1311,9 @@
                                     
                                     {/* Seletor: Protegido! Só o GESTOR vê estes botões */}
                                     {userRole === 'GESTOR' && (
-                                        <div className="flex flex-wrap bg-slate-100 p-1.5 rounded-xl w-fit border border-slate-200 shadow-inner gap-1">
-                                            <button onClick={() => setTabInspecao('motorista')} className={`px-4 py-2 rounded-lg font-black text-xs uppercase tracking-wide transition ${tabInspecao === 'motorista' ? 'bg-white shadow-md text-blue-700' : 'text-slate-500 hover:text-slate-800'}`}>👨‍✈️ Simular Motorista</button>
-                                            <button onClick={() => setTabInspecao('gestor')} className={`px-4 py-2 rounded-lg font-black text-xs uppercase tracking-wide transition ${tabInspecao === 'gestor' ? 'bg-white shadow-md text-emerald-700' : 'text-slate-500 hover:text-slate-800'}`}>📊 Status Atual</button>
-                                            <button onClick={() => setTabInspecao('historico')} className={`px-4 py-2 rounded-lg font-black text-xs uppercase tracking-wide transition ${tabInspecao === 'historico' ? 'bg-white shadow-md text-amber-700' : 'text-slate-500 hover:text-slate-800'}`}>📜 Ver Histórico</button>
+                                        <div className="flex flex-wrap bg-slate-100 p-1.5 rounded-xl w-fit border border-slate-200 shadow-inner gap-2">
+                                            <button onClick={() => setTabInspecao('gestor')} className={`px-5 py-2.5 rounded-lg font-black text-xs uppercase tracking-wide transition ${tabInspecao === 'gestor' || tabInspecao === 'motorista' ? 'bg-white shadow-md text-emerald-700' : 'text-slate-500 hover:text-slate-800'}`}>📊 Status Atual</button>
+                                            <button onClick={() => setTabInspecao('historico')} className={`px-5 py-2.5 rounded-lg font-black text-xs uppercase tracking-wide transition ${tabInspecao === 'historico' ? 'bg-white shadow-md text-amber-700' : 'text-slate-500 hover:text-slate-800'}`}>📜 Ver Histórico</button>
                                         </div>
                                     )}
                                 </div>
@@ -1322,7 +1321,7 @@
                                 {/* ------------------------------------- */}
                                 {/* ABA DO MOTORISTA (Ações de OK/NOK) */}
                                 {/* ------------------------------------- */}
-                                {(tabInspecao === 'motorista' || userRole !== 'GESTOR') && (
+                                {userRole !== 'GESTOR' && (
                                     <div className="bg-white p-6 md:p-8 rounded-3xl border-2 border-blue-100 shadow-lg">
                                         <h3 className="text-lg font-black text-blue-900 mb-6 border-b border-slate-100 pb-4">Área de Realização de Inspeção</h3>
                                         
@@ -1402,7 +1401,7 @@
                                 {/* ------------------------------------- */}
                                 {/* ABA DO GESTOR (STATUS DA FROTA) */}
                                 {/* ------------------------------------- */}
-                                {tabInspecao === 'gestor' && userRole === 'GESTOR' && (
+                                {(tabInspecao === 'gestor' || tabInspecao === 'motorista') && userRole === 'GESTOR' && (
                                     <div className="bg-white p-6 md:p-8 rounded-3xl border-2 border-emerald-100 shadow-lg">
                                         <h3 className="text-lg font-black text-emerald-900 mb-6 border-b border-slate-100 pb-4">Acompanhamento de Pendências</h3>
                                         <div className="space-y-4">
@@ -1424,6 +1423,34 @@
                                                             </div>
                                                             <span className={`text-slate-400 font-black text-xl transition-transform ${isExpanded ? 'rotate-180 text-emerald-600' : ''}`}>▼</span>
                                                         </button>
+                                                        
+                                                        {/* NOVO: DETALHES DAS PENDÊNCIAS PARA O GESTOR */}
+                                                        {isExpanded && (
+                                                            <div className="p-4 bg-white border-t border-slate-100 animate-fade-in">
+                                                                {pendentes.length > 0 ? (
+                                                                    <div className="space-y-3">
+                                                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Alertas Pendentes a Regularizar:</p>
+                                                                        {pendentes.map(p => {
+                                                                            const rotina = CHECKLISTS_MOTORISTA[p];
+                                                                            return (
+                                                                                <div key={p} className="flex items-center gap-4 bg-red-50 text-red-800 p-4 rounded-xl border border-red-100 shadow-sm">
+                                                                                    <span className="text-2xl">🚨</span>
+                                                                                    <div>
+                                                                                        <p className="text-sm font-black">{rotina.titulo}</p>
+                                                                                        <p className="text-xs font-bold text-red-600">{rotina.subtitulo}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )
+                                                                        })}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex items-center justify-center gap-3 bg-emerald-50 text-emerald-700 p-5 rounded-xl border border-emerald-100">
+                                                                        <span className="text-2xl">✅</span>
+                                                                        <span className="text-sm font-black">Nenhuma inspeção pendente para esta viatura!</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )
                                             })}
@@ -1486,7 +1513,6 @@
                                 )}
                             </div>
                         )}
-
                         {showCadastroFunc && userRole === 'GESTOR' && (
                             <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200 animate-fade-in max-w-2xl mx-auto">
                                 <div className="flex justify-between items-center mb-1">
