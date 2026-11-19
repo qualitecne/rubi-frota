@@ -181,7 +181,11 @@
             const [funcionarios, setFuncionarios] = useState([]);
             
             // Registo de itens eliminados localmente para não os ressuscitar na mesclagem
-            const [deletedKeys, setDeletedKeys] = useState({ veiculos: [], despesas: [], rotas: [], lembretes: [], funcionarios: [] });
+            // Memória de exclusões blindada (evita que ficheiros apagados voltem como "zombies" da nuvem)
+            const [deletedKeys, setDeletedKeys] = useState(() => JSON.parse(localStorage.getItem('rubi_frota_deleted_keys')) || { veiculos: [], despesas: [], rotas: [], lembretes: [], funcionarios: [] });
+            useEffect(() => {
+                localStorage.setItem('rubi_frota_deleted_keys', JSON.stringify(deletedKeys));
+            }, [deletedKeys]);
             
             const [view, setView] = useState('dashboard');
             const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
