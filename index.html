@@ -1990,11 +1990,12 @@ const renderSelectRota = () => (
                                                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block border-b border-slate-100 pb-1">🛣️ Vence por Quilometragem</label>
                                                             
                                                             <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-                                                                <span className="text-[9px] font-bold text-slate-500 uppercase block mb-2">Opção A: KM Exato (Alvo Único)</span>
+                                                               <span className="text-[9px] font-bold text-slate-500 uppercase block mb-2">Opção A: KM Exato (Alvo Único)</span>
                                                                 <div className="relative">
                                                                     <input type="number" className="w-full border border-slate-300 p-2 pr-10 rounded text-sm outline-none focus:border-blue-500 bg-white" placeholder="Ex: 150000" value={novoLembrete.kmVencimento || ''} onChange={e => setNovoLembrete({...novoLembrete, kmVencimento: e.target.value, freqKm: '', ultimoKm: ''})} />
                                                                     <span className="absolute right-3 top-2 text-xs font-bold text-slate-400">KM</span>
                                                                 </div>
+                                                                <p className="text-[9px] text-slate-500 mt-2 leading-tight">⚠️ <span className="font-bold">Quando vencer:</span> Terá de digitar o novo limite final manualmente.</p>
                                                             </div>
                                                             
                                                             <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
@@ -2003,6 +2004,7 @@ const renderSelectRota = () => (
                                                                     <input type="number" className="w-full border border-slate-300 p-2 rounded text-sm outline-none focus:border-blue-500 bg-white" placeholder="Avisar a cada X KM (ex: 10000)" value={novoLembrete.freqKm || ''} onChange={e => setNovoLembrete({...novoLembrete, freqKm: e.target.value, kmVencimento: ''})} />
                                                                     <input type="number" className="w-full border border-slate-300 p-2 rounded text-sm outline-none focus:border-blue-500 bg-white" placeholder="Feito no KM (ex: 140000)" value={novoLembrete.ultimoKm || ''} onChange={e => setNovoLembrete({...novoLembrete, ultimoKm: e.target.value, kmVencimento: ''})} />
                                                                 </div>
+                                                                <p className="text-[9px] text-blue-600 mt-2 leading-tight">♻️ <span className="font-bold">Quando vencer:</span> Basta clicar em Editar e atualizar o 'Feito no KM'.</p>
                                                             </div>
                                                         </div>
                                                         
@@ -2038,7 +2040,15 @@ const renderSelectRota = () => (
                                                                         <p className={`text-xs font-bold mt-1 ${status.cor}`}>{status.msg}</p>
                                                                     </div>
                                                                 </div>
-                                                                <button onClick={() => removerLembrete(l.id)} className="text-red-500 text-xs font-bold px-3 py-2 bg-red-50 hover:bg-red-100 rounded-lg transition ml-4 shrink-0">Excluir</button>
+                                                                <div className="flex items-center gap-2 ml-4 shrink-0">
+                                                                    <button onClick={() => {
+                                                                        setNovoLembrete(l);
+                                                                        const originalIndex = lembretes.findIndex(x => x.id === l.id);
+                                                                        setEditingLembreteIndex(originalIndex);
+                                                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                                                    }} className="text-blue-600 text-xs font-bold px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded-lg transition">Editar</button>
+                                                                    <button onClick={() => removerLembrete(l.id)} className="text-red-500 text-xs font-bold px-3 py-2 bg-red-50 hover:bg-red-100 rounded-lg transition">Excluir</button>
+                                                                </div>
                                                             </div>
                                                         );
                                                     })}
