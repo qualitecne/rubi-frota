@@ -1318,7 +1318,7 @@ const renderSelectRota = () => (
                         {/* PÁGINA DEDICADA: INSPEÇÕES OBRIGATÓRIAS */}
                         {/* ========================================== */}
                         {view === 'inspecoes' && !showCadastro && !showCadastroFunc && (
-                            <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
+                            <div className="max-w-5xl mx-auto space-y-6 animate-fade-in mb-8">
                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
                                     <div>
                                         <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">🚨 Inspeções Obrigatórias</h2>
@@ -1363,8 +1363,6 @@ const renderSelectRota = () => (
                                                     return pendentes.map(p => {
                                                         const rotina = CHECKLISTS_MOTORISTA[p];
                                                         const isExpanded = acordeonAtivo === p;
-                                                        
-                                                        // Validação: Tem de responder OK ou NOK a TODOS os itens
                                                         const allAnswered = rotina.itens.every((_, i) => checksRotina[i] !== undefined);
                                                         const canSubmit = allAnswered && assinaturaRotina.trim().length >= 3;
 
@@ -1504,7 +1502,6 @@ const renderSelectRota = () => (
                                 )}
                             </div>
                         )}
-
                         {showCadastroFunc && userRole === 'GESTOR' && (
                             <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200 animate-fade-in max-w-2xl mx-auto">
                                 <div className="flex justify-between items-center mb-1">
