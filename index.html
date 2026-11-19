@@ -171,7 +171,7 @@
         // APLICAÇÃO PRINCIPAL
         // =======================================================
         function ControleFrotaMulti() {
-            // 1. ESTADOS BÁSICOS E MEMÓRIA DE EXCLUSÃO (NOVO)
+            // 1. ESTADOS BÁSICOS E MEMÓRIA DE EXCLUSÃO
             const [userRole, setUserRole] = useState(null); 
             const [veiculos, setVeiculos] = useState([]);
             const [veiculoAtivo, setVeiculoAtivo] = useState('TODOS'); 
@@ -186,6 +186,7 @@
             const [view, setView] = useState('dashboard');
             const [showCadastro, setShowCadastro] = useState(false);
             const [showCadastroFunc, setShowCadastroFunc] = useState(false);
+
             // --- MÓDULO: ROTINAS DO MOTORISTA ---
             const [rotinas, setRotinas] = useState(() => JSON.parse(localStorage.getItem('rubi_frota_rotinas')) || {});
             const [rotinaEmAndamento, setRotinaEmAndamento] = useState(null);
@@ -236,16 +237,14 @@
                 const historico = rotinas[placa] || {};
                 return Object.values(CHECKLISTS_MOTORISTA).filter(rotina => {
                     const ultimo = historico[rotina.id];
-                    if (!ultimo) return true; // Nunca foi feito
+                    if (!ultimo) return true;
                     const diasPassados = Math.floor((new Date() - new Date(ultimo.dataIso)) / (1000 * 60 * 60 * 24));
-                    return diasPassados >= rotina.dias; // Passou do prazo
+                    return diasPassados >= rotina.dias; 
                 }).map(r => r.id);
             };
 
             const finalizarRotina = () => {
                 const agora = new Date();
-                
-                // Cria o relatório exato desta inspeção
                 const detalhes = {
                     id: Date.now(),
                     placa: veiculoAtivo,
@@ -255,10 +254,9 @@
                     data: agora.toLocaleDateString('pt-BR'),
                     hora: agora.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
                     motorista: assinaturaRotina,
-                    respostas: checksRotina // Agora vai guardar 'OK' ou 'NOK' de cada item
+                    respostas: checksRotina 
                 };
 
-                // 1. Atualiza o status para sair do vermelho no painel
                 const novoHistorico = {
                     ...rotinas,
                     [veiculoAtivo]: {
@@ -269,23 +267,15 @@
                 setRotinas(novoHistorico);
                 localStorage.setItem('rubi_frota_rotinas', JSON.stringify(novoHistorico));
 
-                // 2. Grava no NOVO Histórico Permanente do Gestor
                 const novoLog = [detalhes, ...historicoInspecoes];
                 setHistoricoInspecoes(novoLog);
                 localStorage.setItem('rubi_frota_inspecoes_log', JSON.stringify(novoLog));
 
-                // Limpa o ecrã
                 setRotinaEmAndamento(null);
                 setChecksRotina({});
                 setAssinaturaRotina('');
             };
-                setRotinas(novoHistorico);
-                localStorage.setItem('rubi_frota_rotinas', JSON.stringify(novoHistorico));
-                setRotinaEmAndamento(null);
-                setChecksRotina({});
-                setAssinaturaRotina('');
-            };
-            // ------------------------------------
+            
             const [isGenerating, setIsGenerating] = useState(false);
             const [formError, setFormError] = useState('');
             const [syncStatus, setSyncStatus] = useState('A conectar...');
@@ -395,10 +385,9 @@
             };
 
             const checkStatusLembrete = (lembrete) => {
-                let piorCenario = 0; // 0: Normal, 1: Atenção, 2: Crítico
+                let piorCenario = 0;
                 let statusFinal = { icone: '✅', cor: 'text-emerald-600', bg: 'bg-emerald-50', msg: 'No Prazo', critico: false };
 
-                // 1. Avalia o Prazo por Data
                 if (lembrete.dataVencimento) {
                     const hoje = new Date(); hoje.setHours(0,0,0,0);
                     const [ano, mes, dia] = lembrete.dataVencimento.split('-');
@@ -408,7 +397,6 @@
                     else if (dias <= 15) { piorCenario = 1; statusFinal = { icone: '📅', cor: 'text-amber-600', bg: 'bg-amber-50', msg: `Vence em ${dias} dias`, critico: false }; }
                 }
 
-                // 2. Avalia o Prazo por KM (Aceita KM Exato ou Ciclo Contínuo)
                 let alvoKm = null;
                 if (lembrete.kmVencimento) alvoKm = parseFloat(lembrete.kmVencimento);
                 else if (lembrete.freqKm && lembrete.ultimoKm) alvoKm = parseFloat(lembrete.ultimoKm) + parseFloat(lembrete.freqKm);
@@ -683,7 +671,8 @@
                 if (data.filter(v => v > 0).length === 0) return null;
                 return { labels: meses, datasets: [{ label: 'Custo R$ / KM', data, borderColor: '#ef4444', backgroundColor: '#ef4444', tension: 0.3, fill: false }] };
             }, [despesasIniciais, rotasDashboard, veiculoAtivo, isGlobal]);
-const dataConsumo = useMemo(() => {
+            
+            const dataConsumo = useMemo(() => {
                 if(isGlobal) return null;
                 const abs = despesasIniciais.filter(d => d.categoria === 'Abastecimento' && String(d.descricao || '').includes('L a')).sort((a, b) => new Date(a.data || 0) - new Date(b.data || 0));
                 const labels = []; const data = [];
@@ -705,20 +694,19 @@ const dataConsumo = useMemo(() => {
                 if (abs.length === 0) return null;
                 return { labels: abs.map(a => a.data ? String(a.data).substring(5) : ''), datasets: [{ label: 'R$ p/ Litro', data: abs.map(a => parseFloat(a.precoLitro).toFixed(2)), borderColor: '#f59e0b', backgroundColor: '#f59e0b', tension: 0.3, fill: false }] };
             }, [despesasIniciais, isGlobal]);
+
             // ==========================================
-            // NOVO: MOTOR DE SINCRONIZAÇÃO ANTI-CONFLITOS
+            // MOTOR DE SINCRONIZAÇÃO ANTI-CONFLITOS
             // ==========================================
             const salvarNaNuvem = async (veics, desps, lembs, rots, funcs = funcionarios, dKeys = deletedKeys) => {
                 setSyncStatus('A verificar conflitos...');
                 try {
-                    // 1. Puxa os dados atualizados primeiro para não esmagar o trabalho de outros
                     const getResp = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'carregar' }) });
                     const cloud = await getResp.json();
                     
                     let finalVeics = veics, finalDesps = desps, finalLembs = lembs, finalRots = rots, finalFuncs = funcs;
 
                     if (cloud.status === 'sucesso' && cloud.dados) {
-                        // Função inteligente que funde os arrays e protege itens apagados pelo utilizador atual
                         const mergeSeguro = (local, nuvem, chave, tipoDel) => {
                             const localKeys = new Set(local.map(i => String(i[chave])));
                             const deletados = new Set(dKeys[tipoDel].map(String));
@@ -741,7 +729,6 @@ const dataConsumo = useMemo(() => {
                         finalDesps = mergeDespesas(desps, cloud.dados.despesas);
                     }
 
-                    // 2. Grava localmente e empurra para a nuvem a fusão perfeita dos dados
                     setSyncStatus('A gravar...');
                     localStorage.setItem('rubi_frota_db', JSON.stringify({ veiculos: finalVeics, despesas: finalDesps, lembretes: finalLembs, rotas: finalRots, funcionarios: finalFuncs }));
                     
@@ -947,7 +934,6 @@ const dataConsumo = useMemo(() => {
                     return;
                 }
                 
-                // O sistema sabe que é edição se o alerta já tiver um ID
                 const isEdicao = !!novoLembrete.id;
                 const lembreteFinal = { ...novoLembrete, id: novoLembrete.id || Date.now() };
                 
@@ -965,7 +951,6 @@ const dataConsumo = useMemo(() => {
                 setLembretes(novosLembretes);
                 localStorage.setItem('rubi_frota_lembretes', JSON.stringify(novosLembretes));
                 
-                // Limpa o formulário sem invocar variáveis inexistentes
                 setNovoLembrete({ tipo: '', tarefa: '', placa: '', kmVencimento: '', freqKm: '', ultimoKm: '', dataUltimoKm: '', dataVencimento: '', periodoData: '', observacoes: '' });
             };
 
@@ -1042,7 +1027,6 @@ const dataConsumo = useMemo(() => {
             const generatePDF = () => {
                 const printWindow = window.open('', '_blank');
                 
-                // Agrupar despesas por categoria
                 const despesasAgrupadas = {};
                 despesasIniciais.forEach(d => {
                     const cat = d.categoria || 'Outros';
@@ -1137,8 +1121,6 @@ const dataConsumo = useMemo(() => {
                 printWindow.document.close();
             };
 
-           
-            // Preparação dos Filtros Visuais de Tabelas
             const despesasFiltradas = despesasIniciais.filter(d => 
                 (d.categoria && String(d.categoria).toLowerCase().includes(searchTerm.toLowerCase())) || 
                 (d.fornecedor && String(d.fornecedor).toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -1149,7 +1131,8 @@ const dataConsumo = useMemo(() => {
             const lembretesFiltrados = isGlobal ? lembretes : lembretes.filter(l => l.placa === veiculoAtivo);
             const rotasFiltradas = isGlobal ? rotasDashboard.slice().reverse() : rotasDashboard.filter(r => r.placa === veiculoAtivo).reverse();
             const rotasExibicao = userRole === 'OPERACIONAL' ? rotasFiltradas.filter(r => r.status === 'Pendente') : rotasFiltradas;
-const renderSelectRota = () => (
+            
+            const renderSelectRota = () => (
                 <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl mt-3">
                     <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-2">🛣️ Vincular a uma Viagem (Opcional)</label>
                     <select className="w-full border border-slate-300 p-2 rounded-lg text-sm bg-white outline-none focus:border-blue-500" value={novaDespesa.rotaVinculada || ''} onChange={e => setNovaDespesa({...novaDespesa, rotaVinculada: e.target.value})}>
@@ -1163,6 +1146,7 @@ const renderSelectRota = () => (
                     <p className="text-[10px] text-slate-400 mt-1">Ligue esta despesa a uma viagem para calcular o lucro total do frete.</p>
                 </div>
             );
+            
             const renderSeletorVeiculoGlobal = () => {
                 if (!isGlobal) return null;
                 return (
@@ -1176,7 +1160,7 @@ const renderSelectRota = () => (
                 );
             };
 
-                       
+            // BLOCO DE LOGIN
             if (!userRole) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-[#0f172a] p-6 animate-fade-in">
@@ -1203,7 +1187,6 @@ const renderSelectRota = () => (
 
             return (
                 <div className="min-h-screen font-sans text-slate-800 flex flex-col md:flex-row bg-[#f8fafc]">
-                    
                     {/* BARRA SUPERIOR MOBILE */}
                     <div className="md:hidden bg-[#0f172a] text-white p-4 flex justify-between items-center shadow-md z-20 relative">
                         <h1 className="text-xl font-black tracking-tighter text-blue-400">RUBI<span className="text-white font-light">FROTA</span></h1>
@@ -1314,6 +1297,7 @@ const renderSelectRota = () => (
                                 <p className="text-sm">Por favor, escolha o seu veículo no <strong>menu</strong> para iniciar a sua jornada.</p>
                             </div>
                         )}
+
                         {/* ========================================== */}
                         {/* PÁGINA DEDICADA: INSPEÇÕES OBRIGATÓRIAS */}
                         {/* ========================================== */}
@@ -1502,6 +1486,7 @@ const renderSelectRota = () => (
                                 )}
                             </div>
                         )}
+
                         {showCadastroFunc && userRole === 'GESTOR' && (
                             <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] border border-slate-200 animate-fade-in max-w-2xl mx-auto">
                                 <div className="flex justify-between items-center mb-1">
