@@ -291,6 +291,9 @@
             const [isUploading, setIsUploading] = useState(false);
             
             const [searchTerm, setSearchTerm] = useState('');
+            const [filtroHistCategoria, setFiltroHistCategoria] = useState('TODAS');
+            const [filtroHistDataInicio, setFiltroHistDataInicio] = useState('');
+            const [filtroHistDataFim, setFiltroHistDataFim] = useState('');
             const [filtroCatEvolucao, setFiltroCatEvolucao] = useState('TODAS');
             const [filtroMes, setFiltroMes] = useState('TODOS');
 
@@ -1056,16 +1059,40 @@
                     salvarNaNuvem(veiculos, despesas, lembretes, novasRotas, funcionarios, novasDel);
                 }
             };
+            // Preparação dos Filtros Visuais de Tabelas (AGORA COM DATAS E CATEGORIA)
+            const despesasFiltradas = despesasIniciais.filter(d => {
+                const matchSearch = (d.categoria && String(d.categoria).toLowerCase().includes(searchTerm.toLowerCase())) || 
+                                    (d.fornecedor && String(d.fornecedor).toLowerCase().includes(searchTerm.toLowerCase())) ||
+                                    (d.descricao && String(d.descricao).toLowerCase().includes(searchTerm.toLowerCase())) ||
+                                    (d.placa && String(d.placa).toLowerCase().includes(searchTerm.toLowerCase())) ||
+                                    (d.rotaVinculada && String(d.rotaVinculada).toLowerCase().includes(searchTerm.toLowerCase()));
+                
+                const matchCat = filtroHistCategoria === 'TODAS' || d.categoria === filtroHistCategoria;
+                
+                let matchData = true;
+                if (d.data) {
+                    if (filtroHistDataInicio && d.data < filtroHistDataInicio) matchData = false;
+                    if (filtroHistDataFim && d.data > filtroHistDataFim) matchData = false;
+                }
+
+                return matchSearch && matchCat && matchData;
+            });
+
             const generatePDF = () => {
                 const printWindow = window.open('', '_blank');
                 
                 const despesasAgrupadas = {};
-                despesasIniciais.forEach(d => {
+                // O Gerador agora usa apenas os dados filtrados!
+                despesasFiltradas.forEach(d => {
                     const cat = d.categoria || 'Outros';
                     if(!despesasAgrupadas[cat]) despesasAgrupadas[cat] = [];
                     despesasAgrupadas[cat].push(d);
                 });
                 
+                const periodoTexto = (filtroHistDataInicio || filtroHistDataFim) 
+                    ? `${filtroHistDataInicio ? filtroHistDataInicio.split('-').reverse().join('/') : 'Início'} até ${filtroHistDataFim ? filtroHistDataFim.split('-').reverse().join('/') : 'Hoje'}` 
+                    : (filtroMes !== 'TODOS' ? filtroMes : 'Todo o Período');
+
                 let tableHTML = `
                     <html>
                     <head>
@@ -1087,7 +1114,7 @@
                     <body>
                         <div class="header">
                             <h1>Extrato de Despesas da Frota</h1>
-                            <p class="subtitle">Filtro de Viatura: <b>${veiculoAtivo}</b> | Filtro de Mês: <b>${filtroMes}</b></p>
+                            <p class="subtitle">Viatura: <b>${veiculoAtivo}</b> | Categoria: <b>${filtroHistCategoria}</b> | Período: <b>${periodoTexto}</b></p>
                         </div>
                 `;
                 
@@ -1153,13 +1180,6 @@
                 printWindow.document.close();
             };
 
-            const despesasFiltradas = despesasIniciais.filter(d => 
-                (d.categoria && String(d.categoria).toLowerCase().includes(searchTerm.toLowerCase())) || 
-                (d.fornecedor && String(d.fornecedor).toLowerCase().includes(searchTerm.toLowerCase())) ||
-                (d.descricao && String(d.descricao).toLowerCase().includes(searchTerm.toLowerCase())) ||
-                (d.placa && String(d.placa).toLowerCase().includes(searchTerm.toLowerCase())) ||
-                (d.rotaVinculada && String(d.rotaVinculada).toLowerCase().includes(searchTerm.toLowerCase()))
-            );
             const lembretesFiltrados = isGlobal ? lembretes : lembretes.filter(l => l.placa === veiculoAtivo);
             const rotasFiltradas = isGlobal ? rotasDashboard.slice().reverse() : rotasDashboard.filter(r => r.placa === veiculoAtivo).reverse();
             const rotasExibicao = userRole === 'OPERACIONAL' ? rotasFiltradas.filter(r => r.status === 'Pendente') : rotasFiltradas;
@@ -2492,9 +2512,46 @@
                                             </button>
                                         </div>
 
-                                        <div className="relative bg-white p-2 rounded-2xl shadow-sm border border-slate-200" data-html2canvas-ignore>
-                                            <span className="absolute left-6 top-5 text-slate-400 text-lg">🔍</span>
-                                            <input type="text" className="w-full bg-transparent py-3 pl-12 pr-4 text-sm font-bold outline-none text-slate-700" placeholder="Pesquisar por categoria, posto, descrição, Rota (RT...)" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                                        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-200 space-y-4" data-html2canvas-ignore>
+                                            <div className="relative">
+                                                <span className="absolute left-5 top-3.5 text-slate-400 text-lg">🔍</span>
+                                                <input type="text" className="w-full bg-slate-50 border border-slate-200 py-4 pl-14 pr-4 rounded-xl text-sm font-bold outline-none focus:border-blue-500 text-slate-700 transition" placeholder="Pesquisar por fornecedor, descrição, ou código Rota (RT...)" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                                            </div>
+                                            
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Categoria de Despesa</label>
+                                                    <select className="w-full border border-slate-300 p-3 rounded-xl text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-500" value={filtroHistCategoria} onChange={e => setFiltroHistCategoria(e.target.value)}>
+                                                        <option value="TODAS">-- Todas as Categorias --</option>
+                                                        <option value="Abastecimento">Abastecimento</option>
+                                                        <option value="Mecânica / Manutenção">Manutenção Mecânica Geral</option>
+                                                        <option value="Troca de Óleo / Filtros">Troca de Óleo e Filtros</option>
+                                                        <option value="Pneus / Borracharia">Pneus e Borracharia</option>
+                                                        <option value="Lavagem / Estética">Lavagem / Estética / Chaparia</option>
+                                                        <option value="Pedágio">Pedágio / Portagem</option>
+                                                        <option value="Alimentação">Alimentação</option>
+                                                        <option value="Estacionamento">Estacionamento</option>
+                                                        <option value="Hospedagem">Hospedagem / Hotel</option>
+                                                        <option value="Outras Despesas">Outras Despesas</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Data de Início</label>
+                                                    <input type="date" className="w-full border border-slate-300 p-3 rounded-xl text-sm font-bold outline-none focus:border-blue-500 text-slate-700 bg-white" value={filtroHistDataInicio} onChange={e => setFiltroHistDataInicio(e.target.value)} />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1">Data de Fim</label>
+                                                    <input type="date" className="w-full border border-slate-300 p-3 rounded-xl text-sm font-bold outline-none focus:border-blue-500 text-slate-700 bg-white" value={filtroHistDataFim} onChange={e => setFiltroHistDataFim(e.target.value)} />
+                                                </div>
+                                            </div>
+                                            
+                                            {(filtroHistCategoria !== 'TODAS' || filtroHistDataInicio || filtroHistDataFim) && (
+                                                <div className="flex justify-end pt-2 border-t border-slate-100">
+                                                    <button onClick={() => { setFiltroHistCategoria('TODAS'); setFiltroHistDataInicio(''); setFiltroHistDataFim(''); }} className="text-[10px] font-black text-red-600 bg-red-50 px-4 py-2 rounded-lg border border-red-200 hover:bg-red-100 transition uppercase tracking-widest shadow-sm">
+                                                        ❌ Limpar Todos os Filtros
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="space-y-4">
