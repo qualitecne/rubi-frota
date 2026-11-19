@@ -839,11 +839,31 @@ const dataConsumo = useMemo(() => {
             };
 
             const handleAddLembrete = () => {
-                if (isGlobal) return alert('Selecione uma viatura específica.');
-                if (!novoLembrete.freqKm && !novoLembrete.freqMeses) return alert('Indique a frequência em KM ou Meses.');
-                const novosLembretes = [...lembretes, { ...novoLembrete, id: Date.now(), placa: veiculoAtivo }];
-                setLembretes(novosLembretes); salvarNaNuvem(veiculos, despesas, novosLembretes, rotas);
-                setNovoLembrete({ tipo: 'Troca de Óleo e Filtro', freqKm: '', freqMeses: '', ultimoKm: kmAtualNum || '', ultimaData: new Date().toISOString().split('T')[0] });
+                if (!novoLembrete.tarefa && !novoLembrete.tipo) {
+                    alert('Por favor, informe o Serviço ou Componente.');
+                    return;
+                }
+                
+                // Se já tem um ID, é uma edição. Se não tem, cria um ID novo (Date.now)
+                const isEdicao = editingLembreteIndex !== null || novoLembrete.id;
+                const lembreteFinal = { ...novoLembrete, id: novoLembrete.id || Date.now() };
+                
+                let novosLembretes;
+                if (isEdicao) {
+                    // Mapeia a lista e substitui APENAS o alerta que tem o mesmo ID
+                    novosLembretes = lembretes.map(l => l.id === lembreteFinal.id ? lembreteFinal : l);
+                } else {
+                    // Adiciona ao final da lista
+                    novosLembretes = [...lembretes, lembreteFinal];
+                }
+                
+                setLembretes(novosLembretes);
+                // Força a gravação imediata na memória do navegador para não perder o dado
+                localStorage.setItem('rubi_frota_lembretes', JSON.stringify(novosLembretes));
+                
+                // Limpa o formulário e sai do modo de edição
+                setNovoLembrete(defaultLembrete);
+                setEditingLembreteIndex(null);
             };
 
             const removerLembrete = (id) => {
