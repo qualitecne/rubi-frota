@@ -839,7 +839,6 @@ const dataConsumo = useMemo(() => {
             };
 
             const handleAddLembrete = () => {
-                // 1. Validação de Segurança
                 if (!novoLembrete.tarefa && !novoLembrete.tipo) {
                     alert('Por favor, informe o Serviço ou Componente.');
                     return;
@@ -849,16 +848,14 @@ const dataConsumo = useMemo(() => {
                     return;
                 }
                 
-                // 2. Prepara o registo (Novo ou Edição)
-                const isEdicao = editingLembreteIndex !== null || !!novoLembrete.id;
+                // O sistema sabe que é edição se o alerta já tiver um ID
+                const isEdicao = !!novoLembrete.id;
                 const lembreteFinal = { ...novoLembrete, id: novoLembrete.id || Date.now() };
                 
-                // Se não estiver na visão global, injeta a placa automaticamente
                 if (!isGlobal) {
                     lembreteFinal.placa = veiculoAtivo;
                 }
                 
-                // 3. Grava no sistema
                 let novosLembretes;
                 if (isEdicao) {
                     novosLembretes = lembretes.map(l => l.id === lembreteFinal.id ? lembreteFinal : l);
@@ -869,11 +866,8 @@ const dataConsumo = useMemo(() => {
                 setLembretes(novosLembretes);
                 localStorage.setItem('rubi_frota_lembretes', JSON.stringify(novosLembretes));
                 
-                // 4. Limpeza Segura do Formulário (Evita o erro do botão parar)
-                setNovoLembrete({ 
-                    tipo: '', tarefa: '', placa: '', kmVencimento: '', freqKm: '', ultimoKm: '', dataVencimento: '', periodoData: '', observacoes: '' 
-                });
-                setEditingLembreteIndex(null);
+                // Limpa o formulário sem invocar variáveis inexistentes
+                setNovoLembrete({ tipo: '', tarefa: '', placa: '', kmVencimento: '', freqKm: '', ultimoKm: '', dataVencimento: '', periodoData: '', observacoes: '' });
             };
 
             const removerLembrete = (id) => {
@@ -2086,8 +2080,6 @@ const renderSelectRota = () => (
                                                                 <div className="flex items-center gap-2 ml-4 shrink-0">
                                                                     <button onClick={() => {
                                                                         setNovoLembrete(l);
-                                                                        const originalIndex = lembretes.findIndex(x => x.id === l.id);
-                                                                        setEditingLembreteIndex(originalIndex);
                                                                         window.scrollTo({ top: 0, behavior: 'smooth' });
                                                                     }} className="text-blue-600 text-xs font-bold px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded-lg transition">Editar</button>
                                                                     <button onClick={() => removerLembrete(l.id)} className="text-red-500 text-xs font-bold px-3 py-2 bg-red-50 hover:bg-red-100 rounded-lg transition">Excluir</button>
