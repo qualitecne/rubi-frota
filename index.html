@@ -296,24 +296,39 @@
             };
 
             const checkStatusLembrete = (lembrete) => {
-                const kmDoVeiculoAlvo = getKmAtual(lembrete.placa);
-                let status = { cor: 'bg-green-50 text-green-700', icone: '✅', msg: 'No Prazo', critico: false };
-                if (lembrete.freqKm) {
-                    const limiteKm = parseFloat(lembrete.ultimoKm) + parseFloat(lembrete.freqKm);
-                    if (kmDoVeiculoAlvo >= limiteKm) return { cor: 'bg-red-50 text-red-700', icone: '🚨', msg: 'Vencido (KM)', critico: true };
-                    else if (limiteKm - kmDoVeiculoAlvo <= 1000) status = { cor: 'bg-amber-50 text-amber-700', icone: '⚠️', msg: 'Atenção: KM Próximo', critico: false };
+                let piorCenario = 0; // 0: Normal, 1: Atenção, 2: Crítico
+                let statusFinal = { icone: '✅', cor: 'text-emerald-600', bg: 'bg-emerald-50', msg: 'No Prazo', critico: false };
+
+                // 1. Avalia o Prazo por Data
+                if (lembrete.dataVencimento) {
+                    const hoje = new Date(); hoje.setHours(0,0,0,0);
+                    const [ano, mes, dia] = lembrete.dataVencimento.split('-');
+                    const dataVenc = new Date(ano, mes - 1, dia);
+                    const dias = Math.ceil((dataVenc - hoje) / (1000 * 60 * 60 * 24));
+                    if (dias < 0) { piorCenario = 2; statusFinal = { icone: '🚨', cor: 'text-red-600', bg: 'bg-red-50', msg: `Vencido há ${Math.abs(dias)} dias`, critico: true }; }
+                    else if (dias <= 15) { piorCenario = 1; statusFinal = { icone: '📅', cor: 'text-amber-600', bg: 'bg-amber-50', msg: `Vence em ${dias} dias`, critico: false }; }
                 }
-                if (lembrete.freqMeses && !status.critico) {
-                    const dataLimite = new Date(lembrete.ultimaData);
-                    dataLimite.setMonth(dataLimite.getMonth() + parseInt(lembrete.freqMeses));
-                    const hoje = new Date();
-                    if (hoje >= dataLimite) return { cor: 'bg-red-50 text-red-700', icone: '🚨', msg: 'Vencido (Prazo)', critico: true };
-                    else {
-                        const diffDias = (dataLimite - hoje) / (1000 * 60 * 60 * 24);
-                        if (diffDias <= 15) status = { cor: 'bg-amber-50 text-amber-700', icone: '📅', msg: 'Atenção: Prazo Próximo', critico: false };
+
+                // 2. Avalia o Prazo por KM (Se for mais grave, sobrepõe-se à data)
+                if (lembrete.kmVencimento) {
+                    const v = veiculos.find(v => v.placa === lembrete.placa);
+                    const kmAtual = v ? parseFloat(v.kmAtual) : 0;
+                    const kmFaltam = parseFloat(lembrete.kmVencimento) - kmAtual;
+                    
+                    if (kmFaltam <= 0 && piorCenario <= 2) { 
+                        piorCenario = 2; 
+                        statusFinal = { icone: '🚨', cor: 'text-red-600', bg: 'bg-red-50', msg: `Atrasado ${Math.abs(kmFaltam).toLocaleString()} KM`, critico: true }; 
+                    }
+                    else if (kmFaltam <= 1500 && piorCenario < 2) { 
+                        piorCenario = 1; 
+                        statusFinal = { icone: '⚠️', cor: 'text-amber-600', bg: 'bg-amber-50', msg: `Faltam ${kmFaltam.toLocaleString()} KM`, critico: false }; 
+                    }
+                    else if (piorCenario === 0) {
+                        statusFinal = { icone: '✅', cor: 'text-emerald-600', bg: 'bg-emerald-50', msg: `Faltam ${kmFaltam.toLocaleString()} KM`, critico: false };
                     }
                 }
-                return status;
+
+                return statusFinal;
             };
 
             const checkSaudeVeiculo = (placa) => {
@@ -1940,59 +1955,75 @@ const renderSelectRota = () => (
                                 )}
 
                                 {/* MÓDULO: GESTÃO DE ALERTAS (GESTOR) */}
-                                {view === 'lembretes' && !isGlobal && userRole === 'GESTOR' && (
+                                {view === 'lembretes' && userRole === 'GESTOR' && (
                                     <div className="space-y-6 animate-fade-in max-w-3xl mx-auto">
                                         <h2 className="text-2xl font-black text-slate-800">🔔 Configurar Alertas Preventivos</h2>
                                         
                                         <div className="bg-blue-50 p-6 md:p-8 rounded-3xl border border-blue-100 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)]">
+                                            {isGlobal && (
+                                                <div className="mb-6 bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-700">
+                                                    <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wide block mb-2">🚘 Viatura do Alerta</label>
+                                                    <select className="w-full border-0 p-3 rounded-lg text-sm font-bold text-slate-800 bg-white outline-none focus:ring-2 focus:ring-blue-500 shadow-inner cursor-pointer" value={novoLembrete.placa || ''} onChange={e => setNovoLembrete({...novoLembrete, placa: e.target.value})}>
+                                                        <option value="" disabled>-- Escolha a Viatura --</option>
+                                                        {veiculos.map(v => <option key={v.placa} value={v.placa}>{v.placa} - {v.veiculo}</option>)}
+                                                    </select>
+                                                </div>
+                                            )}
+
                                             <h3 className="font-bold text-blue-900 text-sm mb-4">Adicionar Nova Regra</h3>
                                             <div className="space-y-4">
                                                 <div>
                                                     <label className="text-[10px] font-bold text-blue-800 uppercase tracking-wide block mb-1">Componente ou Serviço</label>
-                                                    <input className="w-full border border-blue-200 p-3 rounded-xl text-sm outline-none focus:border-blue-500 bg-white" placeholder="Ex: Troca de Óleo, IPVA, Bateria..." value={novoLembrete.tipo} onChange={e => setNovoLembrete({...novoLembrete, tipo: e.target.value})} list="opcoes-manutencao" />
+                                                    <input className="w-full border border-blue-200 p-3 rounded-xl text-sm outline-none focus:border-blue-500 bg-white shadow-sm" placeholder="Ex: Troca de Óleo, IPVA, Bateria..." value={novoLembrete.tarefa || novoLembrete.tipo || ''} onChange={e => setNovoLembrete({...novoLembrete, tipo: e.target.value, tarefa: e.target.value})} list="opcoes-manutencao" />
                                                     <datalist id="opcoes-manutencao"><option value="Troca de Óleo e Filtro" /><option value="Alinhamento e Balanceamento" /><option value="Seguro/IPVA" /><option value="Revisão Pneus" /></datalist>
                                                 </div>
                                                 
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    <div className="bg-white p-4 rounded-xl border border-blue-100">
-                                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-2 border-b pb-1">Vencimento por Quilometragem</label>
-                                                        <div className="space-y-3 mt-2">
-                                                            <input type="number" className="w-full border border-slate-300 p-3 rounded-lg text-sm outline-none focus:border-blue-500" placeholder="Avisar a cada X KM (Ex: 10000)" value={novoLembrete.freqKm} onChange={e => setNovoLembrete({...novoLembrete, freqKm: e.target.value})} />
-                                                            <input type="number" className="w-full border border-slate-300 p-3 rounded-lg text-sm outline-none focus:border-blue-500 bg-slate-50" placeholder="KM em que foi feito" value={novoLembrete.ultimoKm} onChange={e => setNovoLembrete({...novoLembrete, ultimoKm: e.target.value})} />
-                                                        </div>
-                                                    </div>
+                                                <div className="bg-white/50 border border-blue-100 p-5 rounded-2xl mt-4">
+                                                    <h3 className="text-sm font-black text-blue-900 mb-4 flex items-center gap-2">⏱️ Regras de Vencimento <span className="text-[9px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full uppercase tracking-wider">O que ocorrer primeiro</span></h3>
                                                     
-                                                    <div className="bg-white p-4 rounded-xl border border-blue-100">
-                                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-2 border-b pb-1">Vencimento por Prazo (Tempo)</label>
-                                                        <div className="space-y-3 mt-2">
-                                                            <select className="w-full border border-slate-300 p-3 rounded-lg text-sm outline-none focus:border-blue-500 bg-white" value={novoLembrete.freqMeses} onChange={e => setNovoLembrete({...novoLembrete, freqMeses: e.target.value})}>
-                                                                <option value="">Apenas usar KM...</option><option value="3">A cada 3 meses</option><option value="6">A cada 6 meses</option><option value="12">Anual (12 meses)</option>
-                                                            </select>
-                                                            <input type="date" className="w-full border border-slate-300 p-3 rounded-lg text-sm outline-none focus:border-blue-500 bg-slate-50" value={novoLembrete.ultimaData} onChange={e => setNovoLembrete({...novoLembrete, ultimaData: e.target.value})} />
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                        <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm">
+                                                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-2 border-b border-slate-100 pb-1">🛣️ Vence por Quilometragem</label>
+                                                            <div className="space-y-3 mt-2 relative">
+                                                                <input type="number" className="w-full border border-slate-300 p-3 pr-10 rounded-lg text-sm outline-none focus:border-blue-500" placeholder="Ex: Avisar nos 150000 KM" value={novoLembrete.kmVencimento || ''} onChange={e => setNovoLembrete({...novoLembrete, kmVencimento: e.target.value})} />
+                                                                <span className="absolute right-3 top-3 text-xs font-bold text-slate-400">KM</span>
+                                                                <p className="text-[10px] text-slate-400 font-medium leading-tight">Preencha o KM final. Deixe vazio se não expirar por KM.</p>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm">
+                                                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-2 border-b border-slate-100 pb-1">📅 Vence por Data Exata</label>
+                                                            <div className="space-y-3 mt-2">
+                                                                <input type="date" className="w-full border border-slate-300 p-3 rounded-lg text-sm outline-none focus:border-blue-500" value={novoLembrete.dataVencimento || ''} onChange={e => setNovoLembrete({...novoLembrete, dataVencimento: e.target.value})} />
+                                                                <p className="text-[10px] text-slate-400 font-medium leading-tight">Escolha o dia limite. Deixe vazio se não expirar por data.</p>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
                                                 
-                                                <button onClick={handleAddLembrete} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold p-4 rounded-xl shadow-md transition mt-2">Guardar Regra de Alerta</button>
+                                                <button onClick={handleAddLembrete} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold p-4 rounded-xl shadow-md hover:shadow-lg hover:shadow-blue-500/30 transition mt-4 flex items-center justify-center gap-2">✅ Guardar Regra de Alerta</button>
                                             </div>
                                         </div>
 
                                         <div className="mt-8">
-                                            <h3 className="font-bold text-slate-800 text-lg mb-4 border-b border-slate-200 pb-2">Painel de Controlo desta Viatura</h3>
-                                            {lembretesFiltrados.length === 0 ? <p className="text-sm text-slate-400 bg-white p-6 rounded-2xl border text-center">Nenhum lembrete configurado.</p> : (
+                                            <h3 className="font-bold text-slate-800 text-lg mb-4 border-b border-slate-200 pb-2">{isGlobal ? 'Painel de Alertas Global (Todas as Viaturas)' : 'Painel de Controlo desta Viatura'}</h3>
+                                            {lembretesFiltrados.length === 0 ? <p className="text-sm text-slate-400 bg-white p-6 rounded-2xl border text-center">Nenhum alerta preventivo configurado.</p> : (
                                                 <div className="space-y-3">
                                                     {lembretesFiltrados.map(l => {
                                                         const status = checkStatusLembrete(l);
                                                         return (
-                                                            <div key={l.id} className={`flex justify-between items-center bg-white p-5 rounded-2xl border-l-8 shadow-sm transition hover:shadow-md ${status.cor.replace('bg-','').replace('text-','')}`}>
+                                                            <div key={l.id} className={`flex justify-between items-center bg-white p-5 rounded-2xl border-l-8 shadow-sm transition hover:shadow-md ${status.cor ? status.cor.replace('text-','border-') : 'border-slate-300'}`}>
                                                                 <div className="flex items-center gap-4">
                                                                     <span className="text-3xl">{status.icone}</span>
                                                                     <div>
-                                                                        <p className="font-black text-slate-800 text-base leading-tight">{l.tipo}</p>
-                                                                        <p className="text-xs font-bold mt-1 opacity-90">{status.msg}</p>
+                                                                        <p className="font-black text-slate-800 text-base leading-tight">
+                                                                            {isGlobal && <span className="bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded tracking-wider mr-2 align-middle">{l.placa}</span>}
+                                                                            {l.tarefa || l.tipo}
+                                                                        </p>
+                                                                        <p className={`text-xs font-bold mt-1 ${status.cor}`}>{status.msg}</p>
                                                                     </div>
                                                                 </div>
-                                                                <button onClick={() => removerLembrete(l.id)} className="text-red-500 text-xs font-bold underline px-3 py-2 bg-red-50 hover:bg-red-100 rounded-lg transition ml-4">Excluir</button>
+                                                                <button onClick={() => removerLembrete(l.id)} className="text-red-500 text-xs font-bold px-3 py-2 bg-red-50 hover:bg-red-100 rounded-lg transition ml-4 shrink-0">Excluir</button>
                                                             </div>
                                                         );
                                                     })}
@@ -2001,7 +2032,6 @@ const renderSelectRota = () => (
                                         </div>
                                     </div>
                                 )}
-
                                 {/* MÓDULO: HISTÓRICO FINANCEIRO / CAIXA (GESTOR) */}
                                 {view === 'historico' && userRole === 'GESTOR' && (
                                     <div className="animate-fade-in space-y-6 max-w-5xl mx-auto" id="pdf-content">
